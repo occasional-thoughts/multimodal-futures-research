@@ -106,7 +106,19 @@ def generate_placeholder_macro_news(dates: pd.DatetimeIndex, next_returns: pd.Se
     sentiment correlated with the actual next-period return plus noise, same honesty
     convention as the archived project's placeholder generator. Swap for a real
     historical source (a confirmed-working GDELT connection, a paid vendor, or a
-    manually supplied corpus) before treating any downstream result as real."""
+    manually supplied corpus) before treating any downstream result as real.
+
+    DATA-LEAKAGE WARNING, found the hard way (PHASE_TRACKER.md's Model 6 section):
+    `next_returns` is virtually always `price_df["next_return"]`, which is bit-for-bit
+    the same quantity as `target_return_1d` in app/targets.py. Any model that consumes
+    the resulting SENTIMENT_COLUMNS features AND trades/scores against a 1-day-return
+    label is training on a feature that directly encodes its own label -- this
+    produced an impossible 11.6 Sharpe ratio in Model 6 before it was caught and
+    fixed by dropping the news stream for that model entirely. A 5-day/20-day-horizon
+    model dilutes this enough to not be obviously broken, but the leak is still
+    present -- do not add a new model that uses these features against a 1-day target
+    without either removing this feature or fixing the leak at its source.
+    """
     templates = _MACRO_TEMPLATES[market]
     rng = np.random.default_rng(seed)
     rows = []

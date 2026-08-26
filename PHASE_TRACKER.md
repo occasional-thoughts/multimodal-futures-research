@@ -296,6 +296,32 @@ Rescue model (20-day horizon + COT) — balanced accuracy:
 
 **Bottom line, honestly stated**: after fixing a real collapse bug that was inflating results, neither the standard 5-day model nor the 20-day+COT rescue model demonstrates a trustworthy directional edge on ZN, CL, or GC with the current data and methodology. The standard model's result is a confident null (large-enough sample, balanced accuracy near 0.5). The rescue model's result is an *inconclusive* null (too small a sample to say anything), not a confirmed failure. This retracts every earlier claim in this document of a market "beating baselines" or showing "genuine improvement" — those were measured before this collapse was found and fixed.
 
+### Model 6 — Deep Momentum Network (Sharpe-ratio-optimized position sizing)
+
+Prompted by a direct request to research what actually works in the published literature for this exact problem, rather than iterating further on a framing (direction classification) that Models 1-5 had honestly shown has no edge on this data. Not a guess -- reimplements two real, open-sourced, peer-reviewed approaches:
+
+- **Lim, Zohren & Roberts (2019)**, ["Enhancing Time-Series Momentum Strategies Using Deep Neural Networks"](https://arxiv.org/pdf/1904.04912) (the original Deep Momentum Network / DMN). Core idea: don't classify next-period direction -- output a continuous **position size** directly, trained by optimizing a **differentiable Sharpe ratio loss**. This doesn't require >50% directional accuracy for positive Sharpe, because the loss rewards risk-adjusted P&L (sizing down in choppy periods, up in clear trends), not correct-call frequency. Reported ~2x Sharpe improvement over classical time-series momentum on 88 futures contracts, before costs.
+- **Wood, Giegerich, Roberts & Zohren (2021)**, ["Trading with the Momentum Transformer"](https://arxiv.org/abs/2112.08534) (code: [github.com/kieranjwood/trading-momentum-transformer](https://github.com/kieranjwood/trading-momentum-transformer)). The `SharpeLoss` in `train_model6_dmn.py` is a direct PyTorch port of that repo's Keras `SharpeLoss` class -- fetched and read from the actual source, not reconstructed from the paper text.
+- **Baz, Granger, Harvey, Le Roux & Rattray (2015)** MACD trend-indicator formula -- added as three new `macd_trend_8_24/16_48/32_96` features in `app/features/technical.py` (doubly-normalized, volatility-adjusted trend scores at three timescales; the input signal both papers above build on).
+
+Architecture reuses the existing tech-GRU + co-attention backbone (macro + COT context, learned per-market embedding) from Model 5, with a single `tanh`-bounded position head instead of multi-task heads.
+
+**A serious data-leakage bug found and fixed before any result was trusted, not after**: the first run reported a portfolio Sharpe of **11.6** -- implausible for any real strategy (professional quant funds run ~1-2 long-term). Root-caused instead of reported: `app/data/news_pipeline.py`'s `generate_placeholder_macro_news()` builds its synthetic sentiment signal directly from `price_df["next_return"]`, which is bit-for-bit the same quantity as `target_return_1d` (`next_return = return.shift(-1)` in `prices.py`; `target_return_1d = close.shift(-1)/close - 1` in `targets.py` -- the same value two ways, confirmed by reading both). Models 1-5 used the same feature but predicted a 5-day or 20-day horizon, which dilutes a 1-day leak enough that it never produced an impossible-looking number -- Model 6 trades `target_return_1d` directly, so the leak fed it almost exactly the answer. **Fixed by dropping the fabricated news stream entirely** for this model (co-attention now runs on 2 real context tokens -- macro, COT -- not 3). **This is also a retroactive caveat on every earlier model's news-derived results**: their near-chance balanced accuracy suggests the diluted leak didn't meaningfully help in practice, but it was present, and no fully-clean model in this project uses news features until a real historical news source replaces the placeholder (Phase 11, still open).
+
+**Honest walk-forward result, 10-year data, same 3-fold expanding-window methodology as Phase 26 (portfolio Sharpe, equal-weighted across ZN/CL/GC by calendar date):**
+
+| Strategy | Fold 1 | Fold 2 | Fold 3 | Mean | Std |
+|---|---|---|---|---|---|
+| DMN (learned) | -2.072 | -0.468 | -0.346 | **-0.962** | 0.786 |
+| Buy & hold | -1.060 | 1.935 | 1.631 | 0.836 | 1.346 |
+| Classical trend (hand-built rule, same features) | -0.220 | 1.044 | 1.182 | 0.669 | 0.631 |
+
+**Not a rescue -- a clean negative result, reported as such rather than reached for a flattering cut of it.** The learned model has a negative mean Sharpe and is the worst of the three strategies in every single fold, including underperforming a simple non-learned rule built from the exact same trend features it has access to. The one earlier flattering number (a single static 70/15/15 split gave DMN=1.05, roughly matching buy-and-hold's 1.09) does not survive walk-forward scrutiny -- the same lesson Phase 26 already taught about the classification models, now confirmed a second time in a completely different framing.
+
+**Why, stated honestly rather than explained away**: most plausibly, a full-batch, single-seed, ~150-epoch GRU trained on 3 instruments and roughly a decade of daily data is a much smaller, less-tuned setup than the cited papers' (88 instruments, cross-sectional pooling, extensive hyperparameter search) -- this is a faithful reimplementation of the *idea*, not a reproduction of their exact scale or tuning budget. It's also consistent with everything else this project has found: these three markets show no exploitable edge at a daily/short-horizon under any framing tried so far (classification or Sharpe-regression), which is itself a real, defensible, three-times-independently-confirmed finding, not a failure to find the right trick.
+
+**What this delivers regardless of the number**: a genuine, working, correctly-evaluated implementation of a real published methodology (not a guess), evaluated with the same walk-forward rigor and honest-baseline discipline as everything else here, that surfaced and fixed a real data-leakage bug along the way. The next honest step, if pursued, is the paper's own actual scale (pooling many more instruments, not just 3) rather than tuning this smaller setup to chase a better number on the same 3 markets.
+
 ## Phase 27 — Look-ahead bias checklist
 - ⬜ Not started
 

@@ -20,6 +20,16 @@ TECH_COLUMNS = [
     # Price structure
     "gap", "high_low_range", "dist_from_high_20", "dist_from_low_20",
     "breakout_up", "breakout_down",
+    # Trend-indicator momentum signals (Baz et al. 2015; adopted by Lim, Zohren &
+    # Roberts 2019 "Enhancing Time-Series Momentum Strategies Using Deep Neural
+    # Networks" -- see PHASE_TRACKER.md's Model 6 section). Deliberately different
+    # from the plain `macd`/`macd_signal` pair above: those are raw MACD values on
+    # one (12, 26) window pair; these are volatility-normalized trend-strength
+    # SCORES at three different timescales, doubly normalized so they're comparable
+    # in magnitude to each other and stationary across regimes (a raw MACD value on
+    # a $180 crude contract isn't comparable to one on a $2,000 gold contract; a
+    # normalized score is).
+    "macd_trend_8_24", "macd_trend_16_48", "macd_trend_32_96",
 ]
 
 
@@ -44,6 +54,27 @@ def _bollinger_width(close: pd.Series, window: int = 20, n_std: float = 2.0) -> 
     std = close.rolling(window).std()
     upper, lower = mid + n_std * std, mid - n_std * std
     return (upper - lower) / mid
+
+
+def _macd_trend_signal(close: pd.Series, short: int, long: int) -> pd.Series:
+    """Baz, Granger, Harvey, Le Roux & Rattray (2015) "Dissecting Investment
+    Strategies in the Cross Section and Time Series" trend-indicator formula, as used
+    by Lim/Zohren/Roberts (2019) and Wood/Zohren/Roberts's Momentum Transformer for
+    exactly this asset class. Two normalization passes, not one: the raw EWMA
+    difference is first scaled by 63-day (~1 quarter) realized price volatility to
+    make it comparable across assets of very different price levels, then that
+    already-normalized series is *itself* re-normalized by its own 252-day (~1 year)
+    rolling std so the SCORE has a roughly consistent scale across time regimes too
+    (a quiet-market trend score and a crisis-period trend score are put on the same
+    footing). The final exp(-y^2/4)/0.89 response curve compresses extreme z-scores
+    (a trend signal of z=6 isn't 3x more informative than z=2) while the /0.89
+    divisor keeps the compressed output's variance close to 1, matching the
+    original paper exactly (not an arbitrary constant).
+    """
+    macd = close.ewm(span=short, adjust=False).mean() - close.ewm(span=long, adjust=False).mean()
+    q = macd / close.rolling(63).std()
+    y = q / q.rolling(252).std()
+    return y * np.exp(-(y**2) / 4) / 0.89
 
 
 def _atr(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14) -> pd.Series:
@@ -106,5 +137,10 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["dist_from_low_20"] = (c - rolling_low_20) / c
     out["breakout_up"] = (c > rolling_high_20).astype(float)
     out["breakout_down"] = (c < rolling_low_20).astype(float)
+
+    # --- Trend-indicator momentum signals (see _macd_trend_signal docstring) ---
+    out["macd_trend_8_24"] = _macd_trend_signal(c, 8, 24)
+    out["macd_trend_16_48"] = _macd_trend_signal(c, 16, 48)
+    out["macd_trend_32_96"] = _macd_trend_signal(c, 32, 96)
 
     return out

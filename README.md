@@ -42,7 +42,21 @@ negative**: even at 10 years of history, non-overlapping 20-day evaluation windo
 leave only 6 independent test observations per market per fold — too few for any
 number to mean anything, confirmed and not just assumed (see PHASE_TRACKER.md).
 More history or pooled-fold significance testing is the honest next step, not a
-verdict on the horizon idea either way. Everything else (the P&L-based ablation,
+verdict on the horizon idea either way.
+
+**Model 6 (new): a Deep Momentum Network**, reimplementing real published research
+rather than iterating further on direction classification — [Lim, Zohren & Roberts
+(2019)](https://arxiv.org/pdf/1904.04912) and [Wood, Giegerich, Roberts & Zohren
+(2021)](https://github.com/kieranjwood/trading-momentum-transformer): output a
+continuous position size trained by directly optimizing a differentiable Sharpe
+ratio, so >50% directional accuracy is no longer required for a positive result.
+Building it caught a real data-leakage bug (the synthetic placeholder news feature
+directly encoded the 1-day return this model trades — first run reported an
+impossible Sharpe of 11.6; fixed by dropping that feature stream). **Honest
+walk-forward result after the fix: the learned model underperforms both buy-and-hold
+and a simple hand-built trend rule in every fold** (mean Sharpe −0.96 vs. 0.84 and
+0.67) — a clean negative result, reported as one, not reached for a better cut of it.
+See PHASE_TRACKER.md for the full writeup. Everything else (the P&L-based ablation,
 regime/failure analysis, dashboard, report) is queued.
 
 Real, verified data sources now wired in: Yahoo Finance (prices + real current
