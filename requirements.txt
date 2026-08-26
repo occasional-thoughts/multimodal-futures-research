@@ -1,0 +1,13 @@
+numpy
+pandas
+xlrd
+scikit-learn
+scipy
+torch
+transformers
+xgboost
+shap
+dice-ml
+fastapi
+uvicorn[standard]
+joblib

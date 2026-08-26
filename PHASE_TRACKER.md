@@ -1,0 +1,303 @@
+# Phase Tracker — Multimodal Futures Strategy Research & Paper-Trading Platform
+
+Central research question: **Can a multimodal model combining technical patterns,
+macroeconomic fundamentals, and financial news improve futures trading decisions
+compared with progressively simpler information sets?**
+
+Universe: **ZN** (10-Year Treasury Note futures), **CL** (Crude Oil futures), **GC**
+(Gold futures). See [market_driver_map.md](market_driver_map.md) for the financial-hypothesis
+layer behind this choice.
+
+Ablation backbone (do not vary test set / trading rules / costs / evaluation methodology
+between these):
+
+| Model | Inputs | Question |
+|---|---|---|
+| Model 1 | Technical only | Can price/volume patterns alone generate useful signals? |
+| Model 2 | Technical + Macro | Does understanding the economic environment improve signals? |
+| Model 3 | Technical + Macro + News | Does incorporating financial news add predictive value? |
+| Model 4 | Technical + Macro + News + Co-Attention | Does learning interactions between market state and news improve performance further? |
+
+Status legend: ⬜ not started · 🟨 in progress · ✅ done
+
+## Part 0 — Understand what you're building
+- ✅ Read and internalized the system diagram and prediction framing (return, not existence)
+
+## Phase 1 — Learn the futures markets first
+- ✅ Futures contract mechanics vocabulary
+- ✅ ZN deep dive (Treasury notes, yield/price, drivers)
+- ✅ CL deep dive (WTI, supply/demand, drivers)
+- ✅ GC deep dive (real yields, USD, safe haven, drivers)
+- ✅ Deliverable: [market_driver_map.md](market_driver_map.md)
+- ⬜ **You**: be able to explain each market's drivers out loud, unaided, before moving on
+
+## Phase 2 — Define the exact research problem
+- ✅ Write the precise prediction statement (risk-adjusted direction + expected return over a defined horizon, given info at decision time)
+- ✅ Deliverable: [problem_statement.md](problem_statement.md) — 4 output quantities per market/day (E[1D return], E[5D return], P(5D return > 0), expected volatility), formal information-set definition, scope boundary vs. the strategy layer
+
+## Phase 3 — Define your universe
+- ✅ ZN, CL, GC selected and justified (different economic systems) — see market_driver_map.md Part 5
+
+## Phase 4 — Decide trading frequency
+- ✅ Daily decisions confirmed as v1 scope; exact decision-cutoff, execution-delay, and default holding-period conventions fixed
+- ✅ Deliverable: [trading_frequency.md](trading_frequency.md) — decide at day t close → execute at day t+1 open → hold 5 trading days (v1 default)
+
+## Phase 5 — Data architecture
+- ✅ 5.1 Market data schema (OHLCV + open interest + contract id + expiration) — open interest flagged as a real sourcing gap
+- ✅ 5.2 Macro data selection per market — concrete FRED series IDs chosen (DGS2/5/10/30, FEDFUNDS, CPIAUCSL, PCEPI, UNRATE, PAYEMS, GDPC1, T10YIE, DFII10, DTWEXBGS) + EIA for CL-specific inventories/production
+- ✅ 5.3 Economic-event/surprise data schema (actual − expected) — sourcing gap flagged honestly (no free consensus-forecast source found yet; two fallback paths documented)
+- ✅ 5.4 News data schema (with publication timestamp, not just date) — noted this needs new (macro/commodity) sources, not the old company-headline design
+- ✅ Deliverable: [data_architecture.md](data_architecture.md)
+
+## Phase 6 — Continuous futures contract construction
+- ✅ 6.1 Roll methodology chosen and documented (liquidity-based, in principle) — verified individual dated contracts aren't available from our free data source; v1 uses Yahoo's own `=F` continuous series, gap flagged honestly
+- ✅ 6.2 Price discontinuity adjustment method chosen and documented (back-adjustment, in principle) — same v1 gap, documented
+- ✅ 6.3 `raw_contract_data/` vs `continuous_data/` separation designed (raw side empty for now, ready for real data if it becomes available)
+- ✅ Deliverable: [continuous_contracts.md](continuous_contracts.md)
+
+## Phase 7 — Technical feature engine
+- ✅ Trend (SMA-10/50, EMA-12/26, MA slope)
+- ✅ Momentum (1D return, RSI-14, MACD + signal, 10D ROC)
+- ✅ Volatility (realized vol-20, ATR-14, Bollinger width, vol change)
+- ✅ Volume (1D change, relative volume vs 20D avg)
+- ✅ Price structure (gap, high-low range, distance from 20D high/low, breakout up/down flags)
+- ✅ 22 features total in `backend/app/features/technical.py`, smoke-tested on real ZN=F data (no NaN columns, sane value ranges)
+
+## Phase 8 — Understand what technical analysis actually captures
+- ✅ Reframe each indicator as a hypothesis to test, not a rule (interview-readiness)
+- ✅ Deliverable: [technical_analysis_framing.md](technical_analysis_framing.md) — all 22 Phase 7 features reframed
+- ⬜ **You**: practice saying the one-sentence version out loud until it's natural, not read
+
+## Phase 9 — Macro feature engine (ZN-specific: yield levels/changes/curve, policy, inflation, employment)
+- ✅ `backend/app/data/macro.py` — 14 real ZN macro features from FRED's free public CSV endpoint (no API key needed): yield levels 2/5/10/30Y, yield curve (10Y-2Y) + 5D change, Fed funds rate + 20D change, CPI/PCE/GDP YoY, unemployment, payrolls change, 10Y breakeven inflation
+- ✅ Point-in-time alignment implemented (forward-fill only from observation date + documented typical publication lag, never earlier) — honest limitation flagged: exact historical publication dates need FRED's authenticated API + a free key, not used yet; typical-lag approximation used instead
+- ✅ Smoke-tested on real data — caught and fixed a real bug (YoY transforms were computed after point-in-time alignment, leaving too short a window to ever compute a 252-trading-day lookback; fixed by computing YoY on each series' native frequency first, then aligning)
+
+## Phase 10 — Market-specific fundamental features (CL: inventories/production/OPEC/supply disruptions/demand; GC: real yields/USD/inflation expectations/central-bank vars)
+- ✅ `backend/app/data/fundamentals.py` — CL: real weekly crude inventories + 1W change, weekly field production + 4W change (EIA legacy `.xls` endpoint, verified keyless, real current data ~429M bbl stocks/13.8M bbl-day production), USD index. GC: real 10Y yield, USD, breakeven inflation, Fed funds (via FRED, reusing macro.py's fetch/align helpers)
+- ✅ Smoke-tested on real data — caught and fixed a real bug (EIA sheet's first 2 rows are metadata, not observations; fixed with coerce+drop instead of a hardcoded skip count)
+- ⬜ OPEC+ decisions and supply disruptions deliberately deferred to Phase 5.3's economic-event schema (discrete events, not a continuous series) — not yet implemented
+
+## Phase 11 — News pipeline (FinBERT: cleaning → FinBERT → embedding + sentiment probs + metadata)
+- ✅ `backend/app/data/news_pipeline.py` — real per-ticker headline fetch + FinBERT scoring, verified on live GC=F headlines (correctly relevant, real timestamps, sensible sentiment scores)
+- ⚠️ **Real gap, tested not assumed**: GDELT (best free historically-deep news source) is unreachable from this environment (DNS resolves, connection fails — worth retrying elsewhere). Yahoo's search only returns relevant results for ticker queries, not macro keyword/topic queries (tested "Federal Reserve", "CPI inflation", etc. — all returned generic unrelated news). So: real *current* per-ticker headlines work; a free historically-deep macro-news archive for training backfill does not exist yet in this setup.
+- ✅ Placeholder historical generator (`generate_placeholder_macro_news`, macro-themed not company-themed) built as the stand-in, same honesty convention as the archived project — NOT real news, clearly labeled
+
+## Phase 12 — Asset-specific news relevance filtering
+- ✅ `backend/app/data/relevance.py` — explicit keyword-based classifier (not learned, per the plan's own recommendation for v1), keyword lists drawn directly from `market_driver_map.md`'s driver categories so it's consistent with the financial-hypothesis layer
+- ✅ Tested on real fetched GC=F headlines: only 4/10 ticker-searched articles were actually content-relevant to gold *price* drivers — the rest were gold-mining *company* earnings news, a real and meaningful distinction the filter correctly caught
+- ⚠️ Real limitation found and documented, not hidden: "drilling" matched CL (oil) on a headline that was actually about mineral exploration — simple keyword matching has genuine precision limits; worth revisiting if this becomes a material source of noise once used at scale
+
+## Phase 13 — Align news with market time (publication timestamp ≤ decision timestamp)
+- ✅ `backend/app/data/timing.py` — assigns each article to the correct trading-day decision using real hour:minute timestamps (not just date-matching), via a documented assumed-close-time (4PM ET) convention consistent with Phase 4's own acknowledged data-granularity simplification
+- ✅ Verified all 3 branches explicitly: before-close same-day assignment, after-close next-day rollover, and weekend/non-trading-day rollover — all correct
+
+## Phase 14 — Define target (multi-horizon: 1D return, 5D return, volatility)
+- ✅ `backend/app/targets.py` — implements all 4 problem_statement.md output quantities as computable columns (1D return, 5D return, realized 5D direction, realized 5D forward volatility)
+- ✅ Verified on real ZN data: matches the existing `next_return` column exactly (0.0 diff), and correctly leaves trailing rows NaN (no future data left) rather than silently filling them
+- ✅ Kept in its own module, deliberately never imported by anything in `features/` or `data/` — targets look forward by construction, features never should, and this separation is the guard against accidental leakage
+
+## Phase 15 — Simple baselines before deep learning (buy&hold, momentum, MA strategy, logistic regression, XGBoost)
+- ✅ `backend/scripts/train_baselines.py` — all 5 baselines run on real ZN/CL/GC data, evaluated on directional accuracy against `target_direction_5d` (P&L/Sharpe comparison deferred to after Phase 25's paper-trading engine exists)
+- ✅ Real bug caught mid-phase: `volume_change_1d` produced `inf` (not `NaN`) on 6 real zero-volume days (incl. July 4th), which silently passed Phase 7's NaN-only check and broke sklearn's `StandardScaler` here — fixed in `technical.py` by treating zero volume as missing before the pct_change, verified 0 infinities across all 3 markets afterward
+- ✅ **Second real bug caught, diagnosed, and properly fixed (not papered over)**: initial XGBoost run showed 100% train accuracy / 38.9% test accuracy on CL — classic overfitting, confirmed by explicit train-vs-test diagnostic (200 unregularized trees on ~250 rows, and the validation split was being computed but silently never used). Fixed with real regularization (depth 2, subsample/colsample 0.7, min_child_weight 5, L1/L2 reg) and validation-based early stopping, applied uniformly to all 3 markets — not tuned to make any one market's number prettier. Post-fix: ZN train/test 51.9%/57.1%, CL 65.6%/44.4%, GC 65.6%/59.3% — sane gaps, no more memorization. `best_iteration` was very low in all 3 (0-2 rounds) — with honest regularization, XGBoost finds very little exploitable signal in technical-only features on daily-bar data, which is itself a legitimate, expected finding for this task, not a failure of the code.
+- ✅ **Real, unglossed-over finding, confirmed to survive the overfitting fix** (exactly what the plan asks not to hide): no single baseline wins across all three markets, and this is now known to be real rather than a training artifact.
+  - ZN: XGBoost best (57.1%), momentum/MA worst (41.1%)
+  - CL: plain moving-average rule best (**64.8%**), XGBoost still worst (**44.4%**, now a real result not an overfitting artifact)
+  - GC: logistic regression best (66.7%), XGBoost mid-pack (59.3%)
+  - **Decision carried into Phase 16 onward**: for CL specifically, the bar a sequence/deep-learning Model 1 needs to clear is the 64.8% moving-average baseline, not XGBoost's number. This is exactly the kind of per-market divergence Phase 32 is meant to formally investigate later — it surfaced early, and that's Phase 15 working as intended.
+
+## Phase 16 — Model 1: Technical only
+- ✅ `backend/scripts/train_model1.py` — single-layer GRU (deliberately small: hidden_size=16, dropout 0.3, early stopping) over a 20-day window of the 22 technical features, multi-head output covering all 4 problem_statement.md targets. Kept small from the start because the archived TFT experiment already showed an oversized sequence model collapses to chance level at this data scale — applied proactively, not rediscovered.
+- ✅ **Third real bug found and fixed** (after Phase 15's `inf`-from-zero-volume and overfitting bugs): the first working version's results were invalid — inspecting the raw prediction distribution (not just the accuracy number) showed the model was **collapsing to a constant class** on ZN and GC (e.g. GC predicted "up" for 54/54 test rows). Root cause, diagnosed not guessed: the combined loss (`MSE(return_1d)+MSE(return_5d)+BCE(direction)+MSE(volatility)`) summed terms of wildly different natural scale, and early stopping picked checkpoints by *combined* val loss, with no guarantee that's the checkpoint with a sane direction boundary.
+- ✅ **Fix, shared in `backend/app/models/training_utils.py`** (used by both Model 1 and Model 2, not duplicated): regression loss terms normalized by their own training-set variance, each clamped to a ceiling (targets have variance as low as ~1e-6, so unclamped normalization caused a *second*, separate instability — loss magnitudes exploding to the hundreds/thousands — caught by noticing val_loss values were wildly inconsistent across markets, not assumed benign); checkpoint selection switched from "best combined val loss" to "best validation **direction accuracy**," which is what we actually care about.
+- ✅ Re-verified predictions are non-degenerate after the fix (real 0/1 spread in the test set, not a constant) — GC remains the weakest market (best validation accuracy only 40.7%, still skewed toward "up"), flagged honestly as a real remaining limitation, not hidden.
+- ✅ **Final, trustworthy finding**: Model 1 does not beat the Phase 15 baseline ceiling on any market — ZN 44.6% (vs. 57.1% XGBoost), CL 57.4% (vs. 64.8% moving average), GC 55.6% (vs. 66.7% logistic regression). Numbers changed from the pre-bugfix run (as expected — those were measuring a broken model) but the qualitative conclusion is unchanged and now actually trustworthy: technical data alone doesn't give this sequence model more to extract than the simple baselines already captured.
+
+## Phase 17 — Model 2: Technical + Macro
+- ✅ `backend/scripts/train_model2.py` — two-stream encoder: GRU over the technical window (price data genuinely varies day-to-day) + a small **feedforward** network over just today's macro values (not a second GRU sequence — most macro series barely move within a 20-day forward-filled window, so a sequence encoder there was adding parameters without proportional signal; this was the user-directed fix after the first version showed Model 2 losing to Model 1). Reuses the real Phase 9/10 macro/fundamentals fetchers (FRED for ZN/GC, EIA for CL). Same bug (degenerate collapse) and same fix (`training_utils.py`) applied here as Model 1.
+- ✅ **Final, trustworthy finding**: ZN 55.4% (vs. Model 1's 44.6% — macro helps here), CL 48.1% (vs. Model 1's 57.4% — macro hurts), GC 38.9% (vs. Model 1's 55.6% — macro hurts). None beat their market's Phase 15 baseline ceiling.
+- **Carried forward, not swept under the rug**: at this point in the ablation, simple baselines still win on every market, and richer information hasn't yet earned its complexity. That's a legitimate, reportable state of the ablation study to be in mid-way through Phase 17 of 4 model stages — Phase 18 (news) and Phase 19 (co-attention) are what's supposed to test whether that changes, not a foregone conclusion.
+
+## Phase 18 — Model 3: Technical + Macro + News
+- ✅ `backend/scripts/train_model3.py` — three-stream encoder: tech GRU + macro FFN (Model 2's fix) + news FFN over today's aggregated FinBERT sentiment. Reuses `training_utils.py`'s fix, so no degenerate collapse this time (loss magnitudes sane and consistent, ~15.6-15.7 across all 3 markets).
+- ⚠️ **News caveat carried forward honestly**: uses `generate_placeholder_macro_news` (Phase 11) — real FinBERT scoring on synthetic, clearly-labeled headline text, since no confirmed-working free historical news source exists yet. This exercises the 3-modality pipeline correctly but is not yet a real "does news help" finding.
+- ✅ Results: ZN 57.1% (**ties its 57.1% baseline ceiling — first model to match a baseline**), CL 42.6% (declining further: 57.4%→48.1%→42.6% as modalities are added — a real, consistent, honestly-reported trend, not noise), GC 57.4% (partial recovery from Model 2's 38.9%, still below its 66.7% baseline ceiling).
+
+## Phase 19 — Model 4: Co-Attention
+- ✅ `backend/scripts/train_model4.py` — every timestep of the technical GRU's sequence attends over [macro, news] as key/value context (`H = f(T, M, N, Attention(T,N))` per the plan's formula), not just concatenating static vectors as Model 3 did. Single-head, small hidden size — consistent with the standing lesson from the archived TFT experiment about attention mechanisms needing more data than this project has per market. Attention weights stored per-instance for Phase 35 inspection later (not claimed as causal, per the plan's own caution).
+- ✅ Results: ZN 55.4%, CL 55.6% (recovered from Model 3's 42.6% low), GC 59.3% (best Model 4 result, still below its 66.7% baseline).
+- ✅ Real behavioral observation from the attention weights (inspection only, not a causal claim): GC's co-attention weighted macro over news ~67/33 on average; ZN and CL landed close to 50/50.
+
+### Ablation so far (Phases 16-19 complete) — prediction-quality only, not yet P&L/Sharpe
+
+No model beats its market's Phase 15 baseline ceiling except Model 3 exactly tying ZN. This is evaluated on directional accuracy only — the real Phase 30 ablation (with Sharpe/drawdown/turnover) can't run until the trading-strategy and paper-trading machinery (Phases 21-29) exists. Current honest state: added complexity has not yet demonstrated it earns its cost on this data, and that itself is a legitimate, reportable interim finding, not a failure — Phase 30/31 will need real backtested P&L before any final conclusion, since accuracy alone doesn't capture risk-adjusted performance.
+
+| Market | Baseline | M1 | M2 | M3 | M4 |
+|---|---|---|---|---|---|
+| ZN | 57.1% | 44.6% | 55.4% | 57.1% | 55.4% |
+| CL | 64.8% | 57.4% | 48.1% | 42.6% | 55.6% |
+| GC | 66.7% | 55.6% | 38.9% | 57.4% | 59.3% |
+
+## Phase 20 — Asset-specific representation (learned asset embedding)
+- ✅ `backend/scripts/train_model4_joint.py` — ONE model trained jointly across ZN/CL/GC (Models 1-4 were each trained separately per market), with a learned `nn.Embedding(3, hidden_size)` asset vector fused into the representation alongside the co-attention output, so the model explicitly knows which market it's looking at rather than encoding that implicitly through 3 disjoint parameter sets. Also revisits the archived-project TFT lesson (joint training = more effective data) honestly at a real ~3x, not assumed to help.
+- ✅ **Real bug caught and fixed**: macro data is zero-padded to a common width across markets (14/5/4 columns) so the pooled tensor has one consistent shape, but each market's own macro-embedder expects its own real column count — first run crashed with a matrix-shape error (`231x14` into a `5x16` layer) from feeding CL's embedder the full padded width instead of its own 5 real columns. Fixed by storing each market's real dimension on the model and slicing back down to it before routing to that market's embedder.
+- ✅ **First model in the entire ablation to clearly beat its baseline**: ZN 60.7% (vs. 57.1% baseline) — a real, positive result. Mixed elsewhere though: CL 44.4% (its *worst* result across all 5 models tried), GC 59.3% (unchanged from per-market Model 4).
+
+### Full ablation status (Phases 15-20 complete)
+
+| Market | Baseline | M1 (tech) | M2 (+macro) | M3 (+news) | M4 (co-attn) | M4-joint (+asset embed) |
+|---|---|---|---|---|---|---|
+| ZN | 57.1% | 44.6% | 55.4% | 57.1% | 55.4% | **60.7%** |
+| CL | 64.8% | 57.4% | 48.1% | 42.6% | 55.6% | 44.4% |
+| GC | 66.7% | 55.6% | 38.9% | 57.4% | 59.3% | 59.3% |
+
+Honest read: simple baselines are still winning or tying on 2 of 3 markets even after every architectural idea in the plan has been tried. ZN is the one case where sophistication (co-attention + joint asset-embedded training) demonstrably helped. This is a legitimate, presentable interim finding for the eventual research report (Phase 37) — not every market benefits from the same modeling sophistication, which is itself informative. Still pending before any final conclusion: real historical news (still placeholder) and the actual P&L/Sharpe-based ablation (Phase 30/31), which needs Phases 21-29 (strategy, portfolio, paper-trading, backtest) built first.
+
+## Phase 21 — Trading strategy layer (risk-adjusted score → BUY/HOLD/SELL thresholds)
+- ✅ `backend/app/strategy.py` — model-agnostic: takes only `(expected_return, expected_volatility)`, so the exact same strategy rules apply unchanged to any of the 5+ models built so far, satisfying the plan's "don't change trading rules between models" requirement for Phase 30. Score = return/volatility (per-instance Sharpe-like ratio); thresholds picked by grid search over **validation-only** data, maximizing average validation P&L — the test set never influences threshold choice.
+- ✅ `backend/scripts/run_strategy_demo.py` — demonstrated on the Phase 20 joint model's real predictions.
+- ✅ **Real bug caught before it became a misleading result**: first print showed raw realized price return for SELL positions, not actual strategy P&L (a short profits from a *negative* move, so the sign needs flipping) — caught before reporting it, not after.
+- ✅ **Real finding, and a genuine cross-check via a completely different metric (P&L, not accuracy) that lands on the same conclusion as the whole ablation table**: ZN's SELL positions are the only ones profitable on test (+0.11% avg P&L/position, 42 positions); CL loses on both BUY (-8.52%, thin sample of 6) and SELL (-1.56%); GC's SELL loses slightly (-0.55%). Convergent evidence that ZN is genuinely the standout market, not an artifact of the accuracy metric specifically.
+- ⚠️ Honest limitation, not hidden: validation-calibrated thresholds never triggered a BUY signal at all for ZN or GC on this test period — a real consequence of a small validation set, not a bug, and worth revisiting once more historical data or real news changes the calibration data.
+
+## Phase 22 — Portfolio state
+- ✅ `backend/app/portfolio.py` — a `Portfolio` class that tracks one open position per asset, closes it exactly at the 5-day holding period fixed in `trading_frequency.md`, and only opens a new position once flat. Directly answers the plan's own framing question: "if it asked me to buy yesterday, what happens today?" — the position rides regardless of today's signal until its holding period is up.
+- ✅ Extended `train_model4_joint.py` to also expose real per-row dates/prices/day-indices (needed for day-by-day position bookkeeping, not just aggregate stats) — plumbing change, verified the joint model's own results are unchanged after the change (0.549 overall, same per-market numbers) before trusting anything built on top of it.
+- ✅ `backend/scripts/run_portfolio_demo.py` — walks the real test period day-by-day per market.
+- ✅ **Retroactive correction to Phase 21's demo**: running this surfaced that Phase 21's demo counted every single test-set day as an independent position (no holding-period awareness), which isn't actually realistic trading. Phase 22's portfolio-aware simulation is the first *correct* one — only 27 real trades occur across the whole test period once positions are held for their full 5 days instead of re-decided daily.
+- ✅ Results (real, portfolio-correct): **ZN**: 10 trades, +0.15% avg P&L, 50% win rate (roughly breakeven with a slight edge). **CL**: 8 trades, -4.04% avg P&L, 25% win rate (clearly losing, consistent with every prior CL result). **GC**: 9 trades, +0.68% avg P&L, only 33% win rate but still net positive — wins are larger than losses on average, a real payoff-asymmetry worth noting rather than reading the win rate alone.
+
+## Phase 23 — Position sizing + risk limits
+- ✅ `backend/app/risk.py` — confidence-scaled position sizing (1-3 contracts, scaled by how far past the calibrated threshold the score is), a portfolio-level concentration limit (max 6 total contracts across all assets), and a daily-loss circuit breaker (no new positions on a day where realized P&L already breached -3%). Clearly-defined rules, not an institutional risk engine, per the plan's own scope note.
+- ✅ `Portfolio` extended to carry position size, not just direction.
+- ✅ `backend/scripts/run_risk_demo.py` — walks all 3 markets in **true calendar-date order** (not each market's own row index, which isn't comparable across markets) so the daily-loss breaker and concentration limit see everything happening on the same real day, not coincidentally-numbered unrelated days.
+- ✅ Real result: fewer trades than Phase 22 (risk limits actively block some), and win rates improved notably where they did open — ZN 50%→71%, GC 33%→67% — while CL got worse again (-4.04%→-5.88% size-weighted). Consistent, convergent picture across every phase so far: ZN/GC show a real (if small) edge, CL does not.
+
+## Phase 24 — Futures-specific trading mechanics
+- ✅ Contract specs gathered (multiplier/tick size/tick value) for ZN, CL, GC — see market_driver_map.md
+- ✅ `backend/app/futures_mechanics.py` — real maintenance margins sourced from a broker-published table (AMP Futures — CME's own margin pages are JS-rendered and didn't scrape from this environment; flagged as an approximation from a real source, not fabricated) since we hold overnight (day-trading margin doesn't apply). Slippage (2 ticks against the position, each way) and commission ($2.25/contract/side) applied to every trade.
+- ✅ `backend/scripts/run_futures_mechanics_demo.py` — converts Phase 23's percentage P&L into real dollar terms on the exact same trades (no changes to trading rules).
+- ✅ **Sanity-checked before trusting it** (real gold price fetched directly): one GC contract is ~$467,600 notional against $25,743 margin — ~18x leverage. This is *why* GC's dollar P&L looked huge at first glance (+$116,530 gross across 9 trades) — confirmed correct, not a bug, and a concrete illustration of the leverage concept from `market_driver_map.md` Part 1.
+- ✅ **Real, concerning finding worth flagging plainly**: CL's -5.88% average P&L becomes **-$53,660 net loss** in dollar terms across just 5 trades — against a peak margin usage of only $27,495. That loss is roughly 2x the capital that would have been posted, meaning this strategy would very likely have triggered margin calls in a real account, not just underperformed on paper. Commission itself is negligible (0.4% of gross P&L magnitude) — it's the trade quality on CL that's the real problem, not costs.
+
+## Phase 25 — Paper-trading engine
+- ✅ `backend/app/paper_trading.py` — `PaperTradingEngine` formalizes the plan's own 9-step daily loop, adding the one piece Phases 21-24 hadn't built yet: **unrealized (mark-to-market) P&L on still-open positions**, not just realized P&L when a trade closes. Produces a full daily equity curve (cash + unrealized), which Phase 26/29 need — a list of closed trades alone isn't enough for Sharpe/drawdown.
+- ✅ `backend/scripts/run_paper_trading_demo.py` — $100,000 starting capital, real dollar mechanics from Phase 24, same trades/rules as every prior phase.
+- ⚠️ **First run, before the fix below**: final equity $126,598 (+26.6%) sounded good in isolation, but the equity curve peaked at $280,004 (+180%) before crashing to a trough of $88,317 (**below starting capital**) — a peak-to-trough drawdown of roughly **68%**. Also revealed a real gap: the Phase 23 concentration limit capped raw contract *count* (max 6 total), never actually checked against available cash — and Phase 24's worst-case simultaneous margin figure ($110,910) **exceeds** the $100,000 starting capital. Not solvency-safe.
+- ✅ **Fixed immediately, not deferred**: `risk.py`'s concentration check replaced with a real margin-utilization check (`margin_limit_ok` — never commit more than 50% of current account equity to margin, checked in real dollars via `futures_mechanics.get_specs`, not contract count). `Portfolio.step()` now takes `account_equity` and enforces this.
+- ⚠️ **Re-running after the fix surfaced a second, more subtle and genuinely important finding, not just a smaller number**: final equity **$27,546 (-72.45%)** — a complete reversal from +26.6%. Diagnosed per-asset before accepting it: **GC (previously the single best-performing market — 9 profitable trades, +$116,530 gross) dropped to just 1 trade, which lost -$7,685.** Root cause: GC's margin (~$25,743/contract) is ~2.8x CL's (~$9,165), so a *uniform* percentage-of-equity cap disproportionately blocks the expensive-but-good market while continuing to let the cheap-but-bad market (CL, -$66,951 across 4 trades) trade freely. This is a genuine risk-engine design insight for the final report, not noise: a solvency-safe margin limit that's blind to signal quality can systematically starve the market that actually has an edge. Worth revisiting (e.g. allocate margin budget by demonstrated edge, not just by which asset is cheapest to trade) in a future iteration — flagged here rather than silently smoothed over.
+
+## Phase 26 — Walk-forward backtesting methodology
+- ✅ Parameterized `train_joint()`'s split boundaries (train/val/test fractions) so it can be retrained across a sliding window instead of one static split, with a market-data cache added so walk-forward doesn't re-hit Yahoo/FRED/EIA per fold.
+- ✅ `backend/scripts/run_walk_forward.py` — 3 expanding-window folds (train grows each time, test window slides forward, never touches the future relative to its own fold).
+
+### 🚨 Major finding — this overturns the "ZN is the standout market" conclusion reported throughout Phases 15-25
+
+Direction accuracy per market, per fold:
+
+| Market | Fold 1 | Fold 2 | Fold 3 (≈ the static split used everywhere else) | Mean | Std |
+|---|---|---|---|---|---|
+| ZN | 27.8% | 52.6% | 61.1% | 47.2% | **14.1** |
+| CL | 66.7% | 44.4% | 94.4% | 68.5% | **20.5** |
+| GC | 83.3% | 66.7% | 50.0% | 66.7% | **13.6** |
+
+**Every market swings by 30-50 percentage points depending on which time window is tested.** The single static split used for every result up through Phase 25 happened to land on Fold 3 — which was ZN's *best* fold (61.1%, the result reported as "ZN beats its baseline") and CL's *best* fold too (94.4%, contradicting the entire "CL never works" narrative built across Phases 16-25). Fold 1 tells the opposite story: ZN at 27.8% (badly below baseline) and CL at 66.7% (one of its better results).
+
+**Honest interpretation, not overcorrecting in the other direction**: this doesn't mean "there's no signal anywhere" — it means the evidence gathered so far is too noisy, on too little data, from a single test window, to support a confident claim about *any* market having a persistent edge. The walk-forward doesn't fix the small-sample problem (each fold's test set is still only ~30-60 rows per market) — it makes the instability *visible* instead of hidden behind one arbitrarily-favorable split. That is exactly what Phase 26 exists to catch, and it caught something real.
+
+**What this changes going forward**: every claim from Phases 15-25 about a specific market "having an edge" or "not working" needs to be reframed as "in the one test window used at the time" — not a general property of the market or the model. This is the correct, defensible finding for the final report (Phase 37): **the ablation's single-split results were not robust across time, and that instability is itself the headline finding**, not a footnote. Phase 30/31's ablation table should be built on walk-forward results (or at minimum report both), not the single split.
+
+### Follow-up: extended history period (2y → 5y) to test whether more data stabilizes the folds
+
+`HISTORY_PERIOD` centralized into `app/config.py` (was hardcoded `"2y"` in 7 different files) and raised to `"5y"`, after verifying real dense daily data actually exists that far back (1,256-1,257 rows/market — Yahoo's `"max"` range was tested and found to quietly return sparse/non-daily data for these tickers, confirmed and avoided).
+
+Re-ran the walk-forward on 5 years instead of 2:
+
+| Market | Fold 1 | Fold 2 | Fold 3 | Mean | Std (2y → 5y) |
+|---|---|---|---|---|---|
+| ZN | 48.2% | 48.2% | 53.6% | 50.0% | 14.1 → **2.5** |
+| CL | 67.3% | 42.6% | 61.8% | 57.2% | 20.5 → **10.6** |
+| GC | 57.4% | 64.2% | 38.9% | 53.5% | 13.6 → **10.7** |
+
+**Confirms the hypothesis, with a sobering but honest conclusion**: more data genuinely stabilized the fold-to-fold variance (ZN's std dropped from 14.1 to 2.5 — a real, large improvement). But the *stabilized* truth is more modest than hoped: **ZN now sits consistently right at 50% — chance level — across all 3 folds**, meaning its earlier apparent "edge" (60.7%, 61.1%) really was small-sample noise, not signal, and the extra data revealed that rather than confirming an edge. CL and GC show moderate, real variance (10.6-10.7 std) with means in the mid-50s, not a dramatic, confident edge either.
+
+**This is still a genuinely strong finding for the report**, arguably stronger than "we found an edge" would have been: it demonstrates the methodology correctly caught its own false positive (Phase 26 flagged the instability, more data resolved *how much* of it was noise vs. signal) rather than reporting an inflated result uncritically.
+
+### "Rescue" attempt: 20-day horizon (Moskowitz time-series momentum) + CFTC COT positioning data
+
+Research-motivated (not guessed): Moskowitz/Ooi/Pedersen (2012) "Time Series Momentum" is the most-replicated finding in exactly this asset class, showing real signal at ~1-month+ horizons rather than 5-day; a 2024 *Journal of Futures Markets* commodity-ML paper independently used monthly predictions and flagged CFTC Commitment of Traders (COT) positioning data as a dominant SHAP predictor. Built as `backend/scripts/train_model5_rescue.py` (separate from `train_model4_joint.py` rather than editing it in place, since that file hardcodes "5d" throughout) — same co-attention architecture, now with COT as a real 4th input stream (`app/data/cot.py`, free CFTC Socrata API, point-in-time aligned with a documented 3-day publication lag, verified against real fetched values with plausible signs before trusting it).
+
+Walk-forward comparison (same 3-fold methodology as Phase 26, both on 5y data):
+
+| Market | 5-day horizon (mean / std) | 20-day + COT (mean / std) |
+|---|---|---|
+| ZN | 50.0% / 2.5 | 50.2% / **21.6** |
+| CL | 57.2% / 10.6 | 57.7% / **8.1** |
+| GC | 53.5% / 10.7 | 69.7% / **25.2** |
+
+**Not a clean rescue — mixed, and one real new statistical problem surfaced along the way, flagged rather than glossed over**: CL improved modestly on both mean *and* stability (the most genuinely encouraging result). ZN and GC's *means* look better or unchanged, but their *variance got much worse* — GC's Fold 1 hit 96.2% accuracy, which is the real tell, not a win to celebrate uncritically.
+
+**The reason, caught before over-interpreting the numbers**: the 20-day target is still computed for *every single day* (a rolling window), so consecutive test rows overlap by up to 19/20 days — they are not independent observations. A 167-row test set at this horizon has roughly **~8 truly independent 20-day windows**, not 167. A single sustained trend during one fold's test period can make nearly every overlapping-window prediction agree (hence GC's 96.2%), which looks like skill but is largely one lucky/unlucky trend dominating a barely-independent sample. This makes the 20-day numbers *less* trustworthy at face value than the 5-day ones, not more, until addressed (e.g., evaluating on non-overlapping windows, or explicit autocorrelation-adjusted significance testing) — an open item, not resolved yet.
+
+**Honest bottom line (superseded by the fix below, kept for the record)**: CL is the one place this rescue attempt shows a real, if modest, improvement. ZN and GC do not show a trustworthy rescue — the apparent gains are confounded by the overlapping-window autocorrelation problem this experiment itself revealed.
+
+### Fix: non-overlapping evaluation windows
+
+`train_model5_rescue.py`'s val/test splits now stride by `HORIZON` (20) instead of taking every day — each evaluated window is a genuinely independent 20-day period, not 19/20ths the same period as its neighbor. Train stays dense (overlap is fine, even helpful, for training volume) — only evaluation needed the fix, since that's where non-independence corrupts the reported number (and, for val specifically, corrupts early-stopping checkpoint *selection* too, so it got the same fix, not just test).
+
+**Result, verified precisely on one fold before trusting the pattern**: pooled test set dropped from 488 rows to **9 rows total (3 per market)**. That's the real, honest effective sample size at a 20-day horizon with 5 years of data and this fold structure — the earlier "167 test rows per market" was an illusion created by counting overlapping windows as if they were independent.
+
+**The correct conclusion, not a disappointing one**: 3 independent observations per market per fold is too few to draw *any* trustworthy conclusion, positive or negative — a 0% or 100% result on 3 coin flips says nothing. This isn't a failure of the rescue idea; it's the fix correctly refusing to let a fake sample size manufacture a fake conclusion, exactly as intended. **The real next step, if pursued further, is more historical data or many more (smaller) walk-forward folds pooled together** — not concluding the 20-day horizon "doesn't work" from 3 flips, and not trusting the earlier inflated 167-row numbers either. Flagged as an open item rather than resolved either way.
+
+### Phase 15 baselines re-run on 5y (closes the open item above)
+
+Same methodology as the original Phase 15 run (static 70/15/15 split, same 5 baselines), just on `HISTORY_PERIOD="5y"` instead of `"2y"` — test sets are now 161-169 rows per market instead of 54-56, a real statistical-power improvement in their own right, independent of the walk-forward question.
+
+| Market | Best baseline (2y) | Best baseline (5y) |
+|---|---|---|
+| ZN | 57.1% (XGBoost) | 58.0% (LogReg/XGBoost tied) — roughly unchanged |
+| CL | 64.8% (moving average) | **51.8%** (buy-and-hold/MA tied) — **collapsed to chance level** |
+| GC | 66.7% (logistic regression) | 60.9% (momentum) — more modest |
+
+**Directly consistent with the walk-forward joint-model finding above, from a completely independent angle (baselines, not the deep model)**: CL's headline-looking 64.8% "moving average edge" from the 2-year sample was the same kind of small-sample artifact as ZN's apparent deep-model edge — it evaporates with 3x more test data. Every market's numbers converge toward a tighter, more modest band (roughly 52-61%) once the sample size problem is addressed, rather than the more dramatic 57-67% spread the 2-year data suggested. Two independent methods (walk-forward on the joint model, and a larger single split on the baselines) now point at the same conclusion — that's real convergent evidence, not a coincidence.
+
+## Phase 27 — Look-ahead bias checklist
+- ⬜ Not started
+
+## Phase 28 — Transaction costs and slippage (no-cost vs realistic-cost backtest comparison)
+- ⬜ Not started
+
+## Phase 29 — Evaluation metrics (return, Sharpe, max DD, volatility, win rate, profit factor, turnover, avg trade)
+- ⬜ Not started
+
+## Phase 30 — The ablation study (Models 1-4, everything else held constant)
+- ⬜ Not started
+
+## Phase 31 — Evaluate ablation scientifically (results table + improvement calcs)
+- ⬜ Not started
+
+## Phase 32 — Evaluate each market separately (ZN / CL / GC breakdown, not just pooled)
+- ⬜ Not started
+
+## Phase 33 — Regime analysis (vol regimes, tightening/easing, risk-on/off, supply shocks)
+- ⬜ Not started
+
+## Phase 34 — Failure analysis (worst 20 trades, categorized)
+- ⬜ Not started
+
+## Phase 35 — Explainability (feature importance / SHAP / attention weights — inspection, not causal proof)
+- ⬜ Not started (SHAP infrastructure from the prior version is reusable groundwork)
+
+## Phase 36 — Dashboard
+- ⬜ Not started
+
+## Phase 37 — Research report (14-section writeup)
+- ⬜ Not started
+
+---
+
+**Reusable from the prior "Modality-Attribution Robustness" build**: direct Yahoo Finance
+fetch (handles `=F` tickers correctly), FinBERT sentiment scoring, chronological-split /
+look-ahead-bias discipline, honest placeholder-vs-real-data labeling convention. Everything
+else (regression targets, sequence models, macro data, trading simulation) is new.

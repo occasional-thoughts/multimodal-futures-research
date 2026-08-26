@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Modality-Attribution Robustness Demo</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <h1>Modality-Attribution Robustness</h1>
+  <p class="subtitle">Live demo — does SHAP credit news vs. technical signal consistently across fusion strategies and market regimes?</p>
+</header>
+
+<main>
+  <section class="controls">
+    <label>
+      Stock
+      <select id="ticker-select"></select>
+    </label>
+    <label>
+      Test-period date
+      <select id="date-select"></select>
+    </label>
+    <span id="regime-badge" class="badge"></span>
+  </section>
+
+  <section id="predictions" class="grid-3"></section>
+
+  <section class="panel">
+    <h2>Modality attribution (SHAP)</h2>
+    <div id="attribution" class="grid-3"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Counterfactual — minimal change to flip the prediction</h2>
+    <div class="variant-tabs" id="cf-tabs"></div>
+    <div id="counterfactual"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Attribution Consistency Report</h2>
+    <div id="consistency"></div>
+  </section>
+</main>
+
+<script src="app.js?v=2"></script>
+</body>
+</html>

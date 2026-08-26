@@ -1,0 +1,170 @@
+:root {
+  --bg: #0b0d12;
+  --panel: #151822;
+  --border: #262b38;
+  --text: #e6e8ef;
+  --muted: #8b93a7;
+  --accent: #6ea8fe;
+  --up: #3ecf8e;
+  --down: #f27878;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f6fa;
+    --panel: #ffffff;
+    --border: #e1e4ec;
+    --text: #1a1d29;
+    --muted: #5b6272;
+    --accent: #2563eb;
+    --up: #0f9d58;
+    --down: #d93025;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  padding: 28px 32px 12px;
+}
+
+h1 { margin: 0 0 4px; font-size: 1.5rem; }
+.subtitle { margin: 0; color: var(--muted); font-size: 0.9rem; max-width: 60ch; }
+
+main {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 32px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+  min-width: 160px;
+}
+
+.badge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+.badge.calm { color: var(--up); border-color: var(--up); }
+.badge.volatile { color: var(--down); border-color: var(--down); }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+.panel h2 { margin: 0 0 14px; font-size: 1rem; }
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.card h3 {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pred-value { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
+.pred-value.up { color: var(--up); }
+.pred-value.down { color: var(--down); }
+.pred-meta { font-size: 0.8rem; color: var(--muted); }
+
+.bar-row { margin-bottom: 10px; }
+.bar-label { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+.bar-track { background: var(--border); border-radius: 6px; height: 10px; overflow: hidden; display: flex; }
+.bar-tech { background: var(--accent); height: 100%; }
+.bar-news { background: var(--up); height: 100%; }
+
+.feature-list { list-style: none; padding: 0; margin: 10px 0 0; font-size: 0.82rem; }
+.feature-list li { display: flex; justify-content: space-between; padding: 3px 0; border-top: 1px solid var(--border); }
+
+.variant-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.variant-tabs button {
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.variant-tabs button.active { color: var(--text); border-color: var(--accent); background: rgba(110,168,254,0.12); }
+
+.cf-flip { font-size: 0.9rem; margin-bottom: 12px; color: var(--muted); }
+.cf-changes { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.cf-changes li {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  display: flex;
+  justify-content: space-between;
+}
+.cf-empty { color: var(--muted); font-size: 0.88rem; }
+
+table.consistency-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+table.consistency-table th, table.consistency-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+}
+.verdict {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.verdict.robust { background: rgba(62,207,142,0.15); color: var(--up); }
+.verdict.artifact { background: rgba(242,120,120,0.15); color: var(--down); }
+
+.loading, .error { color: var(--muted); font-size: 0.88rem; padding: 8px 0; }
+.error { color: var(--down); }
