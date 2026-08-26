@@ -27,7 +27,7 @@ warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score
 from sklearn.preprocessing import StandardScaler
 from torch import nn
 
@@ -38,7 +38,7 @@ from app.data.news_pipeline import generate_placeholder_macro_news, score_articl
 from app.data.prices import fetch_price_history
 from app.features.sentiment import SENTIMENT_COLUMNS
 from app.features.technical import TECH_COLUMNS, compute_indicators
-from app.models.training_utils import compute_loss_norms, make_loss_fn
+from app.models.training_utils import balanced_direction_accuracy, compute_loss_norms, compute_pos_weight, make_loss_fn
 from app.targets import TARGET_COLUMNS, compute_targets
 
 WINDOW = 20
@@ -227,7 +227,13 @@ def train_joint(
 
     combined_targets = pd.concat([per_market[t][0][TARGET_COLUMNS].iloc[: per_market[t][2]] for t in ASSETS])
     norms = compute_loss_norms(combined_targets, TARGET_COLUMNS)
-    compute_loss = make_loss_fn(norms)
+    # Class-weighted BCE + balanced-accuracy checkpoint selection: fixes a real,
+    # verified collapse found on the 10-year dataset (all 3 markets predicted one
+    # class 85-100% of the time; raw val accuracy didn't catch it because adjacent
+    # walk-forward periods are often directionally correlated). See
+    # app/models/training_utils.py's docstring for the full diagnosis.
+    pos_weight = compute_pos_weight(y_train["target_direction_5d"])
+    compute_loss = make_loss_fn(norms, direction_pos_weight=pos_weight)
 
     def forward_train(x_tech, x_macro, x_news, aid):
         return model(x_tech, x_macro, x_news, aid, ASSETS)
@@ -245,7 +251,7 @@ def train_joint(
         with torch.no_grad():
             val_pred = forward_train(Xt_val, Xm_val, Xn_val, aid_val)
             val_loss = compute_loss(val_pred, y_val).item()
-            val_acc = ((torch.sigmoid(val_pred["direction_5d_logit"]) > 0.5).float() == y_val["target_direction_5d"]).float().mean().item()
+            val_acc = balanced_direction_accuracy(val_pred, y_val)
 
         if val_acc > best_val_acc or (val_acc == best_val_acc and val_loss < best_val_loss):
             best_val_acc, best_val_loss = val_acc, val_loss
@@ -265,22 +271,33 @@ def train_joint(
         test_pred = forward_train(Xt_test, Xm_test, Xn_test, aid_test)
 
     test_direction = (torch.sigmoid(test_pred["direction_5d_logit"]) > 0.5).float().numpy()
-    overall_acc = accuracy_score(y_test["target_direction_5d"].numpy(), test_direction)
-    per_market_acc = {}
+    y_test_np = y_test["target_direction_5d"].numpy()
+    overall_acc = accuracy_score(y_test_np, test_direction)
+    overall_balanced_acc = balanced_accuracy_score(y_test_np, test_direction)
+    per_market_acc, per_market_balanced_acc = {}, {}
     for ticker in ASSETS:
         mask = (aid_test == ASSET_IDX[ticker]).numpy()
-        per_market_acc[ticker] = accuracy_score(y_test["target_direction_5d"].numpy()[mask], test_direction[mask]) if mask.sum() else float("nan")
+        if mask.sum():
+            per_market_acc[ticker] = accuracy_score(y_test_np[mask], test_direction[mask])
+            per_market_balanced_acc[ticker] = balanced_accuracy_score(y_test_np[mask], test_direction[mask])
+        else:
+            per_market_acc[ticker] = per_market_balanced_acc[ticker] = float("nan")
     if verbose:
+        # Prediction distribution printed every run now, not just when manually
+        # debugged -- this is what would have caught the collapse immediately
+        # instead of needing a separate diagnostic pass after the fact.
         print(f"\nJoint model overall test direction accuracy: {overall_acc:.3f}")
         for ticker in ASSETS:
             mask = (aid_test == ASSET_IDX[ticker]).numpy()
-            print(f"  {ticker}: {per_market_acc[ticker]:.3f} ({mask.sum()} test rows)")
+            pred_dist = dict(zip(*np.unique(test_direction[mask], return_counts=True)))
+            print(f"  {ticker}: acc={per_market_acc[ticker]:.3f} balanced_acc={per_market_balanced_acc[ticker]:.3f} pred_dist={pred_dist} ({mask.sum()} test rows)")
 
     return {
         "val_pred": val_pred, "y_val": y_val, "aid_val": aid_val,
         "test_pred": test_pred, "y_test": y_test, "aid_test": aid_test,
         "dates_test": dates_test, "prices_test": prices_test, "day_idx_test": day_idx_test,
-        "overall_acc": overall_acc, "per_market_acc": per_market_acc,
+        "overall_acc": overall_acc, "overall_balanced_acc": overall_balanced_acc,
+        "per_market_acc": per_market_acc, "per_market_balanced_acc": per_market_balanced_acc,
     }
 
 

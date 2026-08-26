@@ -262,6 +262,40 @@ Same methodology as the original Phase 15 run (static 70/15/15 split, same 5 bas
 
 **Directly consistent with the walk-forward joint-model finding above, from a completely independent angle (baselines, not the deep model)**: CL's headline-looking 64.8% "moving average edge" from the 2-year sample was the same kind of small-sample artifact as ZN's apparent deep-model edge — it evaporates with 3x more test data. Every market's numbers converge toward a tighter, more modest band (roughly 52-61%) once the sample size problem is addressed, rather than the more dramatic 57-67% spread the 2-year data suggested. Two independent methods (walk-forward on the joint model, and a larger single split on the baselines) now point at the same conclusion — that's real convergent evidence, not a coincidence.
 
+### 10-year data extension: a second, subtler class-imbalance collapse (and its fix)
+
+`HISTORY_PERIOD` extended from `"5y"` to `"10y"` (~2,511-2,512 rows/market, verified dense daily data) specifically to give the 20-day rescue experiment's non-overlapping evaluation windows a real chance at enough independent observations (5y left only ~3 per market per fold — see the fix above).
+
+**A new bug, not the same one already fixed**: re-running both the standard 5-day joint model and the 20-day+COT rescue model on the 10-year dataset produced models that had collapsed to predicting one class 85-100% of the time — in **all three markets, in both models**. This slipped past the Phase 16/17 fix (checkpoint selection by validation accuracy) because walk-forward folds place validation immediately before test in time, and adjacent periods are often directionally correlated: a collapsed model that happens to agree with the local trend scores well on *both* validation and test, so raw validation accuracy never flagged it as broken. Caught only by explicitly inspecting prediction distributions rather than trusting the accuracy numbers alone (ZN was predicting "up" on 116 of 117 test rows; GC's apparently-strong result was coincidental alignment with its majority-"up" true test-period distribution, not real signal) — this directly retracted an about-to-be-reported "GC shows a genuine, stable improvement" claim.
+
+**Fix, two independent measures (`backend/app/models/training_utils.py`), applied everywhere a training loop exists** — Models 1-3 (shared utility), Model 4/joint (`train_model4_joint.py`), and the rescue model (`train_model5_rescue.py`, which has its own separate inline loss/training loop and needed the identical fix applied by hand, not for free):
+1. **Class-weighted BCE loss** (`compute_pos_weight`) — collapsing to the majority class is no longer loss-minimizing.
+2. **Balanced accuracy**, not raw accuracy, for both checkpoint *selection* and final *reporting* — a constant predictor scores exactly 0.5 regardless of the true class split, so it can no longer hide behind a lucky trend. Every training script now also prints the raw prediction distribution on every run (not just when manually debugged), so a future collapse would be visible immediately.
+
+**Honest results after the fix (10-year data, same 3-fold expanding-window walk-forward methodology as Phase 26):**
+
+Standard 5-day model — balanced accuracy:
+
+| Market | Fold 1 | Fold 2 | Fold 3 | Mean | Std |
+|---|---|---|---|---|---|
+| ZN | 0.491 | 0.471 | 0.458 | 0.474 | 0.013 |
+| CL | 0.478 | 0.402 | 0.595 | 0.492 | 0.080 |
+| GC | 0.458 | 0.412 | 0.589 | 0.486 | 0.075 |
+
+**No market shows a real edge.** Every value sits within a few points of 0.500 (chance), well inside the noise band implied by the std. This supersedes every earlier 5-day-horizon claim in this document that was based on raw (collapse-vulnerable) accuracy — including the "CL improved, ZN/GC did not" framing above, which itself now looks like it was partly an artifact of the same failure mode on a smaller dataset.
+
+Rescue model (20-day horizon + COT) — balanced accuracy:
+
+| Market | Fold 1 | Fold 2 | Fold 3 | Mean | Std |
+|---|---|---|---|---|---|
+| ZN | 0.833 | 0.500 | 0.500 | 0.611 | 0.157 |
+| CL | 0.500 | 0.500 | 0.750 | 0.583 | 0.118 |
+| GC | 0.375 | 0.500 | 0.500 | 0.458 | 0.059 |
+
+**These numbers are not trustworthy evidence either way, and it would be dishonest to report them as a finding.** Directly verified by re-running fold 1 in isolation: even at 10 years of data, the non-overlapping 20-day stride leaves a **pooled test set of just 18 rows total — 6 per market, per fold**. At n=6, a single flipped prediction swings balanced accuracy by ~17 points, which is exactly the pattern above (ZN's 0.833 came from 4 correct/2 wrong out of 6). The same diagnostic run caught CL's model still collapsed to a constant "up" prediction within that fold (`pred_dist={1.0: 6}`, all six test rows) — but this time balanced accuracy correctly reported it as exactly chance-level (0.500) instead of a misleadingly high number, which is direct, concrete proof the fix does what it's meant to do. The honest conclusion is the same one reached the first time this sample-size problem was found (5y, ~3 obs/fold): **the 20-day non-overlapping design is still statistically underpowered even at 10 years**, and no loss-function or checkpoint-selection fix can substitute for more independent observations. Confirming or ruling out the rescue hypothesis needs either many more years of history, or pooling folds/markets into one larger significance test rather than reading each 6-row fold in isolation — an open item, not resolved.
+
+**Bottom line, honestly stated**: after fixing a real collapse bug that was inflating results, neither the standard 5-day model nor the 20-day+COT rescue model demonstrates a trustworthy directional edge on ZN, CL, or GC with the current data and methodology. The standard model's result is a confident null (large-enough sample, balanced accuracy near 0.5). The rescue model's result is an *inconclusive* null (too small a sample to say anything), not a confirmed failure. This retracts every earlier claim in this document of a market "beating baselines" or showing "genuine improvement" — those were measured before this collapse was found and fixed.
+
 ## Phase 27 — Look-ahead bias checklist
 - ⬜ Not started
 

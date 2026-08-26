@@ -33,10 +33,15 @@ if __name__ == "__main__":
     for i, fold in enumerate(FOLDS):
         print(f"\n=== Fold {i + 1}/{len(FOLDS)}: train=[0:{fold['train_frac']}] val=[...{fold['train_frac'] + fold['val_frac']:.2f}] test=[...{fold['test_end_frac']}] ===")
         result = train_joint(seed=42, verbose=False, **fold)
-        print(f"  overall={result['overall_acc']:.3f}  " + "  ".join(f"{t}={result['per_market_acc'][t]:.3f}" for t in ASSETS))
-        fold_results.append(result["per_market_acc"])
+        # Balanced accuracy is the headline number now, not raw accuracy -- raw
+        # accuracy is exactly what let the class-imbalance collapse hide behind a
+        # falsely-impressive number in the original 10-year re-run (see
+        # app/models/training_utils.py's module docstring). Raw is still printed
+        # alongside it for reference, never as the number that gets trusted alone.
+        print(f"  overall raw={result['overall_acc']:.3f} balanced={result['overall_balanced_acc']:.3f}  " + "  ".join(f"{t}={result['per_market_balanced_acc'][t]:.3f}" for t in ASSETS))
+        fold_results.append(result["per_market_balanced_acc"])
 
-    print("\n=== Walk-forward summary across all folds ===")
+    print("\n=== Walk-forward summary across all folds (balanced accuracy) ===")
     print(f"{'Market':<8}{'Fold 1':<10}{'Fold 2':<10}{'Fold 3':<10}{'Mean':<10}{'Std':<10}")
     for ticker in ASSETS:
         accs = [fr[ticker] for fr in fold_results]

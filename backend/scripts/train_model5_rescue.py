@@ -32,7 +32,7 @@ warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score
 from sklearn.preprocessing import StandardScaler
 from torch import nn
 
@@ -44,6 +44,7 @@ from app.data.news_pipeline import generate_placeholder_macro_news, score_articl
 from app.data.prices import fetch_price_history
 from app.features.sentiment import SENTIMENT_COLUMNS
 from app.features.technical import TECH_COLUMNS, compute_indicators
+from app.models.training_utils import compute_pos_weight
 from app.targets import compute_targets, target_columns
 
 WINDOW = 20
@@ -156,8 +157,13 @@ def build_sequences_for_market(full, macro_columns, tech_scaler, macro_scaler, t
     return np.stack(Xt), np.stack(Xm), np.stack(Xn), np.stack(Xc), np.array(aid), {c: np.array(v, dtype=np.float32) for c, v in y.items()}
 
 
-def make_loss_fn(norms):
-    mse, bce = nn.MSELoss(), nn.BCEWithLogitsLoss()
+def make_loss_fn(norms, direction_pos_weight=None):
+    # direction_pos_weight: see app/models/training_utils.py's module docstring --
+    # the same class-imbalance collapse found on the 10-year standard-model
+    # walk-forward re-run (majority class predicted 85-100% of the time) recurred
+    # here too once real 10-year data was used, so this experiment needs the
+    # identical class-weighted-BCE fix, not just its own strided-window fix.
+    mse, bce = nn.MSELoss(), nn.BCEWithLogitsLoss(pos_weight=direction_pos_weight)
 
     def compute_loss(pred, y):
         r1 = torch.clamp(mse(pred["return_1d"], y["target_return_1d"]) / norms["target_return_1d"], max=5.0)
@@ -167,6 +173,16 @@ def make_loss_fn(norms):
         return r1 + rh + direction + vol
 
     return compute_loss
+
+
+def balanced_direction_accuracy_h(pred, y) -> float:
+    """Same idea as training_utils.balanced_direction_accuracy, but generic to the
+    horizon-parameterized column name (_DIR_COL = target_direction_20d here, not
+    target_direction_5d) since this script isn't horizon-fixed like Models 1-4."""
+    with torch.no_grad():
+        pred_direction = (torch.sigmoid(pred["direction_h_logit"]) > 0.5).float().numpy()
+        y_true = y[_DIR_COL].numpy()
+    return balanced_accuracy_score(y_true, pred_direction)
 
 
 def train_joint(epochs=150, patience=15, seed=42, train_frac=TRAIN_FRAC, val_frac=VAL_FRAC, test_end_frac=1.0, verbose=True):
@@ -233,7 +249,8 @@ def train_joint(epochs=150, patience=15, seed=42, train_frac=TRAIN_FRAC, val_fra
 
     combined_targets = pd.concat([per_market[t][0][TARGET_COLUMNS].iloc[: per_market[t][2]] for t in ASSETS])
     norms = {c: max(float(np.nanvar(combined_targets[c])), 1e-8) for c in TARGET_COLUMNS if c != "target_direction_" + str(HORIZON) + "d"}
-    compute_loss = make_loss_fn(norms)
+    pos_weight = compute_pos_weight(y_train[_DIR_COL])
+    compute_loss = make_loss_fn(norms, direction_pos_weight=pos_weight)
 
     def fwd(xt, xm, xn, xc, aid):
         return model(xt, xm, xn, xc, aid, ASSETS)
@@ -250,7 +267,7 @@ def train_joint(epochs=150, patience=15, seed=42, train_frac=TRAIN_FRAC, val_fra
         with torch.no_grad():
             val_pred = fwd(Xt_val, Xm_val, Xn_val, Xc_val, aid_val)
             val_loss = compute_loss(val_pred, y_val).item()
-            val_acc = ((torch.sigmoid(val_pred["direction_h_logit"]) > 0.5).float() == y_val[_DIR_COL]).float().mean().item()
+            val_acc = balanced_direction_accuracy_h(val_pred, y_val)
 
         if val_acc > best_val_acc or (val_acc == best_val_acc and val_loss < best_val_loss):
             best_val_acc, best_val_loss, best_state, no_improve = val_acc, val_loss, {k: v.clone() for k, v in model.state_dict().items()}, 0
@@ -258,7 +275,7 @@ def train_joint(epochs=150, patience=15, seed=42, train_frac=TRAIN_FRAC, val_fra
             no_improve += 1
             if no_improve >= patience:
                 if verbose:
-                    print(f"early stopping at epoch {epoch} (best val direction_acc={best_val_acc:.3f})")
+                    print(f"early stopping at epoch {epoch} (best val balanced_direction_acc={best_val_acc:.3f})")
                 break
 
     model.load_state_dict(best_state)
@@ -267,18 +284,28 @@ def train_joint(epochs=150, patience=15, seed=42, train_frac=TRAIN_FRAC, val_fra
         test_pred = fwd(Xt_test, Xm_test, Xn_test, Xc_test, aid_test)
 
     test_direction = (torch.sigmoid(test_pred["direction_h_logit"]) > 0.5).float().numpy()
-    overall_acc = accuracy_score(y_test[_DIR_COL].numpy(), test_direction)
-    per_market_acc = {}
+    y_test_np = y_test[_DIR_COL].numpy()
+    overall_acc = accuracy_score(y_test_np, test_direction)
+    overall_balanced_acc = balanced_accuracy_score(y_test_np, test_direction)
+    per_market_acc, per_market_balanced_acc = {}, {}
     for ticker in ASSETS:
         mask = (aid_test == ASSET_IDX[ticker]).numpy()
-        per_market_acc[ticker] = accuracy_score(y_test[_DIR_COL].numpy()[mask], test_direction[mask]) if mask.sum() else float("nan")
+        if mask.sum():
+            per_market_acc[ticker] = accuracy_score(y_test_np[mask], test_direction[mask])
+            per_market_balanced_acc[ticker] = balanced_accuracy_score(y_test_np[mask], test_direction[mask])
+        else:
+            per_market_acc[ticker] = per_market_balanced_acc[ticker] = float("nan")
     if verbose:
-        print(f"\nOverall test direction accuracy ({HORIZON}d horizon): {overall_acc:.3f}")
+        print(f"\nOverall test direction accuracy ({HORIZON}d horizon): acc={overall_acc:.3f} balanced_acc={overall_balanced_acc:.3f}")
         for ticker in ASSETS:
             mask = (aid_test == ASSET_IDX[ticker]).numpy()
-            print(f"  {ticker}: {per_market_acc[ticker]:.3f} ({mask.sum()} test rows)")
+            pred_dist = dict(zip(*np.unique(test_direction[mask], return_counts=True)))
+            print(f"  {ticker}: acc={per_market_acc[ticker]:.3f} balanced_acc={per_market_balanced_acc[ticker]:.3f} pred_dist={pred_dist} ({mask.sum()} test rows)")
 
-    return {"overall_acc": overall_acc, "per_market_acc": per_market_acc}
+    return {
+        "overall_acc": overall_acc, "overall_balanced_acc": overall_balanced_acc,
+        "per_market_acc": per_market_acc, "per_market_balanced_acc": per_market_balanced_acc,
+    }
 
 
 if __name__ == "__main__":

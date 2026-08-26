@@ -29,10 +29,10 @@ if __name__ == "__main__":
     for i, fold in enumerate(FOLDS):
         print(f"\n=== Fold {i + 1}/{len(FOLDS)} ===")
         result = train_joint(seed=42, verbose=False, **fold)
-        print(f"  overall={result['overall_acc']:.3f}  " + "  ".join(f"{t}={result['per_market_acc'][t]:.3f}" for t in ASSETS))
-        fold_results.append(result["per_market_acc"])
+        print(f"  overall raw={result['overall_acc']:.3f} balanced={result['overall_balanced_acc']:.3f}  " + "  ".join(f"{t}={result['per_market_balanced_acc'][t]:.3f}" for t in ASSETS))
+        fold_results.append(result["per_market_balanced_acc"])
 
-    print("\n=== Walk-forward summary (rescue model: 20d horizon + COT) ===")
+    print("\n=== Walk-forward summary (rescue model: 20d horizon + COT, balanced accuracy) ===")
     print(f"{'Market':<8}{'Fold 1':<10}{'Fold 2':<10}{'Fold 3':<10}{'Mean':<10}{'Std':<10}")
     for ticker in ASSETS:
         accs = [fr[ticker] for fr in fold_results]

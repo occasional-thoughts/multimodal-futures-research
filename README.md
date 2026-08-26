@@ -21,16 +21,29 @@ Universe: **ZN** (10-Year Treasury Note futures), **CL** (Crude Oil futures), **
 Phases 1-26 are done. **Phase 26 (walk-forward backtesting) overturned the "ZN is the
 standout market" conclusion from Phases 15-25** — the single static split used
 throughout the ablation happened to land on each market's most flattering fold.
-Extending `HISTORY_PERIOD` from 2y to 5y confirmed this was real small-sample
-instability. A research-motivated "rescue" attempt (20-day horizon per Moskowitz et
-al.'s time-series momentum literature + CFTC Commitment of Traders positioning data,
-`backend/scripts/train_model5_rescue.py`) surfaced a second overlapping-window
-autocorrelation problem, since fixed by evaluating on non-overlapping windows — which
-revealed the true effective sample size at a 20-day horizon is only ~3 independent
-observations per market per fold, too few to draw any conclusion yet. More history or
-more pooled folds is the honest next step, not a verdict on the horizon idea either
-way. See PHASE_TRACKER.md for the full breakdown. Everything else (the P&L-based
-ablation, regime/failure analysis, dashboard, report) is queued.
+`HISTORY_PERIOD` has since been extended to 10y (~2,511 rows/market) to give later
+experiments more statistical power.
+
+**A class-imbalance collapse bug was found and fixed on the 10-year re-run**: all
+three markets, in both the standard 5-day model and the 20-day+COT "rescue" model
+(below), had collapsed to predicting one direction 85-100% of the time — undetected by
+the original validation-accuracy safeguard because walk-forward validation and test
+periods are often directionally correlated. Fixed with class-weighted loss + balanced
+accuracy for both checkpoint selection and reporting (see PHASE_TRACKER.md for the
+full diagnosis). **Honest result after the fix: the standard 5-day model shows no
+real directional edge on ZN, CL, or GC** — balanced accuracy sits within a few points
+of chance (0.45-0.59) across all markets and folds, a confident null result, not a
+disappointing one to hide.
+
+The research-motivated "rescue" attempt (20-day horizon per Moskowitz et al.'s
+time-series momentum literature + CFTC Commitment of Traders positioning data,
+`backend/scripts/train_model5_rescue.py`) remains **inconclusive rather than
+negative**: even at 10 years of history, non-overlapping 20-day evaluation windows
+leave only 6 independent test observations per market per fold — too few for any
+number to mean anything, confirmed and not just assumed (see PHASE_TRACKER.md).
+More history or pooled-fold significance testing is the honest next step, not a
+verdict on the horizon idea either way. Everything else (the P&L-based ablation,
+regime/failure analysis, dashboard, report) is queued.
 
 Real, verified data sources now wired in: Yahoo Finance (prices + real current
 per-ticker news), FRED (macro, no API key needed via the public CSV endpoint), EIA
