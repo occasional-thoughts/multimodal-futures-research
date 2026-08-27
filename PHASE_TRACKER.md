@@ -427,6 +427,10 @@ Prompted by the question of whether an *agentic* system — LLM agents that reas
 
 Now passes all five regression cases, including both real failures observed in production.
 
+**Model-size control test (confirms the diagnosis was right).** The raw-CSV failure could have been blamed on the 8B model being too small, so this was tested rather than assumed: the same GC=F brief was run through qwen3:14b. Both models returned **the identical decision** (HOLD / MEDIUM), both fully price-grounded, both citing the same core evidence (RSI ~76-77 overbought, speculators crowded at the 93rd percentile against heavily net-short commercials). The 14B technical analyst is marginally richer — it quotes the trend scores (+0.92 / +0.90 / -0.01) explicitly — but reaches the same conclusion for the same reasons at **twice the runtime** (532s vs ~240s per market; ~18 min/day for both markets vs ~8).
+
+The conclusion is the useful part: **doubling model size changed nothing, while changing the architecture changed everything.** The same 8B model that emitted a pandas tutorial under the raw-CSV design produces correctly-grounded decisions under the pre-computed brief. That is direct evidence the original failure was architectural, not a capacity limit — and it means the fix generalizes to whatever model is available rather than depending on access to a large one. Staying on 8B: faster and more reliable for an unattended daily job, at no measured quality cost.
+
 **Status: running.** A scheduled weekday task appends decisions and commits them to git *before the outcome is known*, which makes the record tamper-evident. Meaningful N is roughly four weeks out. This is the honest cost of the only methodologically clean path available on free data — and it is still a stronger evidentiary basis than most of the 77 audited studies above.
 
 ## Phase 27 — Look-ahead bias checklist
