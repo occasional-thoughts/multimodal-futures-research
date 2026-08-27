@@ -369,6 +369,35 @@ Also closed a real, separately-motivated gap in the existing COT data: added `co
 
 **This is now the 4th materially different, independently-built method** (multi-task classification, Sharpe-ratio position-sizing regression, cross-modal attention fusion, and now gradient-boosted trees on entirely real features) **that finds no exploitable directional edge on ZN/CL/GC at a 5-day horizon.** That convergence across genuinely different model families and feature-leak-free inputs is itself a real, defensible research finding for the final report — not a failure to find the right architecture.
 
+### Model 9 — Deep Momentum Network on a broader 13-market futures universe
+
+Third lever from the same literature review, tested before concluding the DMN approach (Model 6) doesn't work here. Model 6 pooled only ZN/CL/GC and lost to both buy-and-hold and a classical trend rule in every fold. One real, literature-identified difference was untested: the original DMN paper backtested on **88** instruments, not 3, and **End-to-End Parametric Portfolio Policies for Cross-Asset Futures Timing** ([arXiv:2607.00475](https://arxiv.org/pdf/2607.00475)) directly found "learned policies perform better in the broad cross-asset universe... than simple rules" — universe size is a documented driver of these papers' results, not incidental.
+
+Verified feasibility before building anything: 10 additional liquid CME futures (ES, NQ, YM, RTY — equity index; 6E — FX; SI, HG — metals; ZB, ZF — rates; NG — energy) all fetch cleanly with real dense 10-year data via the existing pipeline. Built `train_model9_dmn_broad.py`: same `SharpeLoss` and portfolio-daily-return methodology as Model 6, pooled across all 13 markets. Deliberately **technical-features-only** (no macro/news/COT) for every market, for two honest reasons: the macro/fundamentals/COT plumbing is hand-built per-market for ZN/CL/GC specifically and doesn't exist for the 10 new tickers, and this isolates the universe-size variable from the multimodal-features question already tested (and found not to help) in Models 6-8 — a cleaner single-variable experiment, and closer to the original DMN paper's own setup.
+
+**Honest walk-forward result, 10-year data, same 3-fold methodology (portfolio Sharpe):**
+
+| Strategy | Fold 1 | Fold 2 | Fold 3 | Mean | Std |
+|---|---|---|---|---|---|
+| DMN (13 markets) | -0.934 | -0.780 | 0.303 | **-0.470** | 0.551 |
+| Buy & hold | -1.133 | 0.925 | 1.084 | 0.292 | 1.010 |
+| Classical trend | -0.097 | -1.318 | -0.330 | -0.581 | 0.529 |
+
+**Genuine, literature-consistent progress — not a clean win, and reported as exactly that.** The broader universe meaningfully narrowed the gap from Model 6's 3-market result (mean Sharpe -0.962 → -0.470), and the DMN now beats the classical trend rule in 2 of 3 folds (mean -0.470 vs. -0.581), matching what the cited papers report when comparing a learned policy against a hand-built rule. But it still underperforms simple buy-and-hold (mean -0.470 vs. 0.292) — so this is a real, honest improvement in the DMN's relative standing, not evidence the paradigm delivers genuine alpha over the simplest possible baseline on this universe. Diversification benefit (buy-and-hold's own Sharpe rose from -1.06 on 3 markets to 0.29 on 13) is doing real work here too, not just the learned model.
+
+### Overall investigation conclusion (Models 4-9)
+
+Six independently-built, materially different methods were tried on this research question, each evaluated with the same walk-forward rigor and each result checked before being trusted (ablations, prediction-distribution inspection, leak tracing) rather than reported at face value:
+
+1. **5-day direction classification** (Model 4, tech+macro+shallow-sentiment) — near-chance, balanced accuracy 0.47-0.49.
+2. **20-day direction classification + COT** (Model 5) — inconclusive (too few independent test windows even at 10y, not negative).
+3. **Sharpe-optimized position sizing, 3 markets** (Model 6) — negative, lost to both baselines every fold.
+4. **Real semantic-embedding cross-modal fusion** (Model 7) — apparent gain, ablation-confirmed to be a data-leak artifact, not real.
+5. **Regularized gradient-boosted trees, no news** (Model 8) — near-chance, matching Model 4, ruling out "the deep architecture is the problem."
+6. **Sharpe-optimized position sizing, 13 markets** (Model 9) — genuine partial improvement, still short of buy-and-hold.
+
+**This convergence is itself the finding.** Four structurally different model families (recurrent multi-task classification, gradient-boosted trees, cross-modal attention fusion, and Sharpe-ratio-optimized regression) applied to real, leak-checked features all land in the same place: no exploitable directional edge at a 5-day horizon on ZN/CL/GC from technical, macro, and CFTC positioning data alone. The one lever that measurably moved a result was universe size for the Sharpe-regression framing (Model 9) — consistent with, not contradicting, everything else found. The honest, defensible research conclusion for the final report is a null result on daily/short-horizon directional predictability for these three markets specifically, arrived at through genuine multi-method triangulation rather than stopping at the first (or most flattering) result.
+
 ## Phase 27 — Look-ahead bias checklist
 - ⬜ Not started
 

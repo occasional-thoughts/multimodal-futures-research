@@ -21,70 +21,41 @@ Universe: **ZN** (10-Year Treasury Note futures), **CL** (Crude Oil futures), **
 Phases 1-26 are done. **Phase 26 (walk-forward backtesting) overturned the "ZN is the
 standout market" conclusion from Phases 15-25** — the single static split used
 throughout the ablation happened to land on each market's most flattering fold.
-`HISTORY_PERIOD` has since been extended to 10y (~2,511 rows/market) to give later
-experiments more statistical power.
+`HISTORY_PERIOD` has since been extended to 10y (~2,511 rows/market), and a real
+class-imbalance collapse bug (all markets predicting one direction 85-100% of the
+time, undetected by the original validation-accuracy safeguard) was found and fixed
+with class-weighted loss + balanced accuracy — full diagnosis in PHASE_TRACKER.md.
 
-**A class-imbalance collapse bug was found and fixed on the 10-year re-run**: all
-three markets, in both the standard 5-day model and the 20-day+COT "rescue" model
-(below), had collapsed to predicting one direction 85-100% of the time — undetected by
-the original validation-accuracy safeguard because walk-forward validation and test
-periods are often directionally correlated. Fixed with class-weighted loss + balanced
-accuracy for both checkpoint selection and reporting (see PHASE_TRACKER.md for the
-full diagnosis). **Honest result after the fix: the standard 5-day model shows no
-real directional edge on ZN, CL, or GC** — balanced accuracy sits within a few points
-of chance (0.45-0.59) across all markets and folds, a confident null result, not a
-disappointing one to hide.
+**Six independently-built, materially different methods have now been tried on the
+core research question** ("does technical+macro+news+COT information predict
+short-horizon futures direction"), each checked before being trusted (ablations,
+prediction-distribution inspection, leak tracing) rather than reported at face value:
 
-The research-motivated "rescue" attempt (20-day horizon per Moskowitz et al.'s
-time-series momentum literature + CFTC Commitment of Traders positioning data,
-`backend/scripts/train_model5_rescue.py`) remains **inconclusive rather than
-negative**: even at 10 years of history, non-overlapping 20-day evaluation windows
-leave only 6 independent test observations per market per fold — too few for any
-number to mean anything, confirmed and not just assumed (see PHASE_TRACKER.md).
-More history or pooled-fold significance testing is the honest next step, not a
-verdict on the horizon idea either way.
+| Model | Approach | Honest result |
+|---|---|---|
+| 4 | 5-day direction classification | Near-chance (balanced acc. 0.47-0.49) |
+| 5 | 20-day classification + COT | Inconclusive — too few independent test windows even at 10y |
+| 6 | Sharpe-optimized position sizing, 3 markets | Negative — lost to buy-and-hold and a classical trend rule every fold |
+| 7 | Real semantic-embedding + cross-modal fusion ([STONK](https://arxiv.org/abs/2508.13327)) | Apparent gain, **ablation-confirmed to be a data-leak artifact**, not real |
+| 8 | Regularized XGBoost, tech+macro+COT, no news | Near-chance, matching Model 4 — rules out "the deep architecture is the problem" |
+| 9 | Sharpe-optimized position sizing, **13 markets** | Genuine partial improvement (mean Sharpe -0.96 → -0.47), still short of buy-and-hold |
 
-**Model 6 (new): a Deep Momentum Network**, reimplementing real published research
-rather than iterating further on direction classification — [Lim, Zohren & Roberts
-(2019)](https://arxiv.org/pdf/1904.04912) and [Wood, Giegerich, Roberts & Zohren
-(2021)](https://github.com/kieranjwood/trading-momentum-transformer): output a
-continuous position size trained by directly optimizing a differentiable Sharpe
-ratio, so >50% directional accuracy is no longer required for a positive result.
-Building it caught a real data-leakage bug (the synthetic placeholder news feature
-directly encoded the 1-day return this model trades — first run reported an
-impossible Sharpe of 11.6; fixed by dropping that feature stream). **Honest
-walk-forward result after the fix: the learned model underperforms both buy-and-hold
-and a simple hand-built trend rule in every fold** (mean Sharpe −0.96 vs. 0.84 and
-0.67) — a clean negative result, reported as one, not reached for a better cut of it.
-See PHASE_TRACKER.md for the full writeup.
+**This convergence is itself the finding.** Four structurally different model
+families, applied to real leak-checked features, land in the same place: no
+exploitable directional edge at a 5-day horizon on ZN/CL/GC from technical, macro,
+and CFTC positioning data alone. The one lever that measurably moved a result —
+pooling a broader futures universe for the Sharpe-regression framing — is consistent
+with, not contradicting, everything else found (real diversification benefit, not a
+predictive edge). A genuinely interesting side-finding along the way: Model 7's
+richer semantic embedding could exploit the known-diluted synthetic-news leak more
+effectively than a shallower sentiment score could, even at a horizon previously
+judged "safe" — see PHASE_TRACKER.md for the ablation that caught it.
 
-**Model 7 (new): real semantic-embedding news + cross-modal fusion**, built after
-checking this project's own architecture diagram against the code and finding a real
-gap — every prior model discarded FinBERT's semantic embedding and used only its
-3-class sentiment probabilities. Reimplements
-[STONK](https://arxiv.org/abs/2508.13327) (numeric market features as the attention
-query, text embeddings as key/value) plus an MSGCA-style gate. **Honest result: the
-apparent improvement doesn't survive an ablation.** CL's balanced accuracy jumped
-from 0.492 to 0.626 with the richer embedding — but zeroing out the entire news
-input collapsed *every* market to exactly ~0.500, proving the gain was the model
-exploiting the (already-known, diluted) news-feature leak more effectively, not a
-real architecture benefit. Re-checked Model 4's original result the same way — it
-held up fine (0.474→0.492 with news removed, no collapse), so this is specific to
-Model 7's richer representation, not a retroactive problem for everything else. See
-PHASE_TRACKER.md for the full ablation writeup.
-
-**Model 8 (new): regularized XGBoost, tech+macro+COT, zero news exposure** —
-deliberately avoids the leak problem entirely rather than patching around it again.
-Grounded in real literature (Shwartz-Ziv & Armon 2021: gradient-boosted trees
-repeatedly beat deep learning on small tabular data, exactly this project's regime),
-plus a new "COT Index" positioning-extremity feature the raw COT data never had.
-**Honest result: no meaningful improvement** — ZN 0.494, CL 0.495, GC 0.523, all
-within noise of Model 4's 0.474/0.492/0.486. This is now the 4th independently-built,
-materially different method (classification, Sharpe-regression, cross-modal fusion,
-gradient-boosted trees) that finds no exploitable 5-day-horizon edge on ZN/CL/GC —
-a real, convergent research finding, not a failure to find the right trick. See
-PHASE_TRACKER.md for the full writeup. Everything else (the P&L-based
-ablation, regime/failure analysis, dashboard, report) is queued.
+Full per-model writeups, citations (Lim/Zohren/Roberts 2019, Wood/Zohren/Roberts's
+Momentum Transformer, Moskowitz et al. 2012, Baz et al. 2015, STONK, MSGCA,
+Shwartz-Ziv & Armon 2021, arXiv:2607.00475), and the walk-forward tables behind every
+number above are in PHASE_TRACKER.md. Everything else (the P&L-based ablation,
+regime/failure analysis, dashboard, final report) is queued.
 
 Real, verified data sources now wired in: Yahoo Finance (prices + real current
 per-ticker news), FRED (macro, no API key needed via the public CSV endpoint), EIA
