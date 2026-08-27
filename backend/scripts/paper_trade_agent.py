@@ -106,10 +106,15 @@ def price_sanity_check(decision_text: str, actual_price: float | None, tolerance
     # Bare numbers only count when they sit in explicit price context.
     lo, hi = actual_price * 0.3, actual_price * 3.0
     price_context = re.compile(
-        r"(?:price|level|support|resistance|target|stop|entry|exit|breakout|breakdown|"
-        r"range|band|bracket\w*|between|toward\w*|above|below|near|"
+        # KEY_LEVEL first: it is the structured field the risk manager is required to
+        # emit, so it is the single most important number to validate. An earlier
+        # version omitted it and silently skipped validation on a real GC=F decision
+        # whose only price claim WAS its KEY_LEVEL -- the guard reported "no price
+        # cited" on a decision that cited exactly one, the one that mattered.
+        r"(?:key[_ ]?level|price|level|support|resistance|target|stop|entry|exit|"
+        r"breakout|breakdown|range|band|bracket\w*|between|toward\w*|above|below|near|"
         r"trading at|sell(?:ing)? at|buy(?:ing)? at)\D{0,24}?"
-        r"(\d{2,6}(?:,\d{3})*(?:\.\d+)?)",
+        r"(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{2,6}(?:\.\d+)?)",
         re.IGNORECASE,
     )
     for m in price_context.finditer(decision_text):
