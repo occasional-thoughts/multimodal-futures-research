@@ -347,6 +347,28 @@ Prompted directly by the user pointing at this project's own original architectu
 
 **Bottom line**: the cross-modal fusion architecture itself is not yet validated as beneficial — the only clear signal it found was the leak, and removing the leak-adjacent input removed the entire effect. A fair test of STONK-style fusion on this project's markets needs either a real, non-leaking historical news source (Phase 11's long-standing open gap) or a placeholder generator with zero correlation to any traded target, not just "diluted." Retaining the architecture and the embedding-extraction infrastructure (both real, working, and reusable) while withholding any performance claim until that's resolved.
 
+### Model 8 — regularized gradient-boosted trees (XGBoost), no news, zero leak risk
+
+Prompted by a second literature review ("browse all papers... use their methodology or combine methodology... make it work") after Model 7's cross-modal fusion turned out to be leak-driven, not real. Deliberately chose a direction with **zero exposure** to the news-leak problem rather than trying to patch around it again.
+
+**Research reviewed**: Shwartz-Ziv & Armon (2021), "Tabular data: Deep learning is not all you need" — XGBoost beat deep models on 8 of 11 tabular benchmarks, close to a literature consensus for exactly this data regime (a few thousand rows, heterogeneous engineered features) that every model in this project (1-7) has been a deep GRU/attention architecture applied to, without ever re-testing the simpler alternative at the current data/feature scale. Phase 15's original XGBoost baseline predates the 10-year extension, the Baz trend-indicator features, and COT entirely.
+
+Also closed a real, separately-motivated gap in the existing COT data: added `cot_commercial_percentile_3y` / `cot_speculator_percentile_3y` to `app/data/cot.py` — the standard "COT Index" (trailing 3-year percentile rank of net positioning via `100*(current-min)/(max-min)`), which practitioner and academic sources specifically flag as more predictive than the raw net-position level this project already had (commercial hedgers at positioning extremes reportedly signal direction correctly ~70% of the time in some studies). Verified computing correctly on real data before use (range 0-100, sensible distribution, not degenerate).
+
+**Design**: `train_model8_gbdt.py`, one regularized `XGBClassifier` per market (tech + that market's macro + COT, no news at all), same regularization discipline as Phase 15's fix (max_depth=3, subsample/colsample<1, reg_alpha/reg_lambda, early-stopping on a real validation split) plus `scale_pos_weight` and balanced-accuracy reporting for the same class-imbalance-collapse reason established in `training_utils.py`.
+
+**Honest walk-forward result, 10-year data, same 3-fold methodology (balanced accuracy):**
+
+| Market | Model 4 (deep, shallow news) | Model 8 (XGBoost, no news) |
+|---|---|---|
+| ZN | 0.474 | 0.494 |
+| CL | 0.492 | 0.495 |
+| GC | 0.486 | 0.523 |
+
+**No meaningful improvement — a confirmed null, not a disappointing one to soften.** Every value is within a few points of chance and inside the fold-to-fold noise band (std 0.006-0.047). The balanced-accuracy safeguard caught XGBoost skewing heavily toward one class in some folds (ZN fold 1: 98 of 104 predictions "up") and correctly reported that as ~0.49, not a flattering raw accuracy number — the same discipline established for the neural models applied here too, not assumed unnecessary for a tree model.
+
+**This is now the 4th materially different, independently-built method** (multi-task classification, Sharpe-ratio position-sizing regression, cross-modal attention fusion, and now gradient-boosted trees on entirely real features) **that finds no exploitable directional edge on ZN/CL/GC at a 5-day horizon.** That convergence across genuinely different model families and feature-leak-free inputs is itself a real, defensible research finding for the final report — not a failure to find the right architecture.
+
 ## Phase 27 — Look-ahead bias checklist
 - ⬜ Not started
 

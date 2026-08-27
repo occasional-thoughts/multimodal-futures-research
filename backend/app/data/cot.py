@@ -17,6 +17,7 @@ RELEASE_LAG_DAYS=3 encodes this documented schedule, same honesty convention as
 macro.py's RELEASE_LAG_DAYS (a known typical lag, not authenticated vintage data).
 """
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -26,7 +27,21 @@ _TFF_DATASET = "gpe5-46if"
 
 RELEASE_LAG_DAYS = 3  # Tuesday "as of" -> released the following Friday
 
-COT_COLUMNS = ["cot_speculator_net_pct_oi", "cot_commercial_net_pct_oi", "cot_speculator_net_chg_1w"]
+COT_COLUMNS = [
+    "cot_speculator_net_pct_oi", "cot_commercial_net_pct_oi", "cot_speculator_net_chg_1w",
+    # "COT Index" / positioning-extremity features (Williams' Stochastic COT Index
+    # convention, widely used in practitioner literature and cited academically --
+    # e.g. commercial hedgers at extreme net positions correctly signal price
+    # direction on the order of 70% of the time in some studies). Distinct from the
+    # raw net-position-%-of-OI columns above: those measure the LEVEL of positioning,
+    # these measure how EXTREME that level is relative to its own trailing 3-year
+    # range, which the literature specifically flags as the more predictive
+    # transformation, not the raw level. Added after a literature review found this
+    # gap (see PHASE_TRACKER.md's Model 8 section) -- this project had the raw COT
+    # data since the Model 5 rescue experiment but never computed this specific,
+    # separately-motivated transform of it.
+    "cot_commercial_percentile_3y", "cot_speculator_percentile_3y",
+]
 
 _MARKET_CONFIG = {
     "ZN=F": {"dataset": _TFF_DATASET, "code": "043602", "report_type": "tff"},
@@ -69,6 +84,18 @@ def _speculator_commercial_net_pct(df: pd.DataFrame, report_type: str) -> pd.Dat
     out["cot_speculator_net_pct_oi"] = (spec_net / oi).to_numpy()
     out["cot_commercial_net_pct_oi"] = (comm_net / oi).to_numpy()
     out["cot_speculator_net_chg_1w"] = out["cot_speculator_net_pct_oi"].diff().to_numpy()
+
+    # Trailing 3-year (156-week) percentile rank of the current net-position level --
+    # `100 * (current - rolling_min) / (rolling_max - rolling_min)`, the standard
+    # "COT Index" formula. min_periods=52 (~1 year) so this isn't NaN for the entire
+    # first 3 years of any market's history; still a TRAILING-only window, no
+    # look-ahead (matches every other point-in-time feature in this project).
+    window = 156
+    for col, out_col in [("cot_commercial_net_pct_oi", "cot_commercial_percentile_3y"), ("cot_speculator_net_pct_oi", "cot_speculator_percentile_3y")]:
+        roll_min = out[col].rolling(window, min_periods=52).min()
+        roll_max = out[col].rolling(window, min_periods=52).max()
+        span = (roll_max - roll_min).replace(0, np.nan)  # flat range (rare) -> NaN, not a div-by-zero inf
+        out[out_col] = 100 * (out[col] - roll_min) / span
     return out
 
 

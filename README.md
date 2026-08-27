@@ -71,7 +71,19 @@ exploiting the (already-known, diluted) news-feature leak more effectively, not 
 real architecture benefit. Re-checked Model 4's original result the same way — it
 held up fine (0.474→0.492 with news removed, no collapse), so this is specific to
 Model 7's richer representation, not a retroactive problem for everything else. See
-PHASE_TRACKER.md for the full ablation writeup. Everything else (the P&L-based
+PHASE_TRACKER.md for the full ablation writeup.
+
+**Model 8 (new): regularized XGBoost, tech+macro+COT, zero news exposure** —
+deliberately avoids the leak problem entirely rather than patching around it again.
+Grounded in real literature (Shwartz-Ziv & Armon 2021: gradient-boosted trees
+repeatedly beat deep learning on small tabular data, exactly this project's regime),
+plus a new "COT Index" positioning-extremity feature the raw COT data never had.
+**Honest result: no meaningful improvement** — ZN 0.494, CL 0.495, GC 0.523, all
+within noise of Model 4's 0.474/0.492/0.486. This is now the 4th independently-built,
+materially different method (classification, Sharpe-regression, cross-modal fusion,
+gradient-boosted trees) that finds no exploitable 5-day-horizon edge on ZN/CL/GC —
+a real, convergent research finding, not a failure to find the right trick. See
+PHASE_TRACKER.md for the full writeup. Everything else (the P&L-based
 ablation, regime/failure analysis, dashboard, report) is queued.
 
 Real, verified data sources now wired in: Yahoo Finance (prices + real current
