@@ -4,3 +4,12 @@ __pycache__/
 .DS_Store
 lightning_logs/
 *.joblib
+
+# Cloned third-party research repos (FinMem, TradingAgents) -- reference implementations
+# evaluated in the Model 10 agentic-AI investigation, not part of this project's source.
+external/
+
+# NOTE: data/paper_trades/ is deliberately NOT ignored -- the decision log IS the
+# experimental result of the forward paper-trading study (scripts/paper_trade_agent.py),
+# and committing it as it accumulates is what makes the record tamper-evident: each
+# day's decision is timestamped in git history before the outcome is known.

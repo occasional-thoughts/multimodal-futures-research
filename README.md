@@ -51,6 +51,28 @@ richer semantic embedding could exploit the known-diluted synthetic-news leak mo
 effectively than a shallower sentiment score could, even at a horizon previously
 judged "safe" — see PHASE_TRACKER.md for the ablation that caught it.
 
+**Model 10 (live): a multi-agent LLM trading council.** Seven local LLM agents —
+technical, macro, positioning and news analysts feeding a bull-vs-bear debate and a
+risk manager — reasoning over the *same* information set as Models 4-9, so the
+comparison is honest. Architecture follows
+[TradingAgents](https://arxiv.org/abs/2412.20138); runs entirely on local Ollama
+(free, no API key, no data leaves the machine).
+
+Running the off-the-shelf framework first produced an instructive failure: its
+technical analyst was handed a raw CSV and emitted *a pandas tutorial*, leaving the
+debate with no price anchor — so it argued *"sell at 95, stop at 85"* while crude
+traded at **82.28**. The fix was architectural, not a bigger model: do all numerical
+work in verified Python and hand the model finished figures in prose. The rebuilt
+council's first decision cited every figure correctly (RSI 60.9, MACD +0.799, ATR
+range 79.41-85.49, CFTC 25th percentile) and correctly declined to trade on
+mid-range positioning.
+
+**This is a forward study, not a backtest** — verified that free news is only ~2 days
+deep, which makes historical backtesting of any news-driven agent *vacuous* (the news
+agents would reason over an empty set while appearing to work). Decisions are logged
+and committed to git daily *before outcomes are known*. The evaluator refuses to
+report performance below 20 resolved observations per market, enforced in code.
+
 Full per-model writeups, citations (Lim/Zohren/Roberts 2019, Wood/Zohren/Roberts's
 Momentum Transformer, Moskowitz et al. 2012, Baz et al. 2015, STONK, MSGCA,
 Shwartz-Ziv & Armon 2021, arXiv:2607.00475), and the walk-forward tables behind every
