@@ -131,10 +131,13 @@ def build_market_data(ticker: str):
     return full, macro_columns
 
 
+DISABLE_NEWS_ABLATION = False  # integrity check, not a normal option -- see PHASE_TRACKER.md's Model 7 section: set True to test whether this model's near-chance-but-not-exactly-chance result is itself partly leak-driven, the same way Model 7's was confirmed to be.
+
+
 def build_sequences_for_market(full: pd.DataFrame, macro_columns: list, tech_scaler, macro_scaler, ticker: str, window: int):
     tech_scaled = tech_scaler.transform(full[TECH_COLUMNS])
     macro_scaled = macro_scaler.transform(full[macro_columns])
-    news_vals = full[SENTIMENT_COLUMNS].to_numpy()
+    news_vals = full[SENTIMENT_COLUMNS].to_numpy() if not DISABLE_NEWS_ABLATION else np.zeros((len(full), len(SENTIMENT_COLUMNS)), dtype=np.float32)
 
     Xt, Xm, Xn, y, asset_ids, dates, prices, day_idx = [], [], [], {c: [] for c in TARGET_COLUMNS}, [], [], [], []
     for i in range(window - 1, len(full)):

@@ -56,8 +56,23 @@ impossible Sharpe of 11.6; fixed by dropping that feature stream). **Honest
 walk-forward result after the fix: the learned model underperforms both buy-and-hold
 and a simple hand-built trend rule in every fold** (mean Sharpe −0.96 vs. 0.84 and
 0.67) — a clean negative result, reported as one, not reached for a better cut of it.
-See PHASE_TRACKER.md for the full writeup. Everything else (the P&L-based ablation,
-regime/failure analysis, dashboard, report) is queued.
+See PHASE_TRACKER.md for the full writeup.
+
+**Model 7 (new): real semantic-embedding news + cross-modal fusion**, built after
+checking this project's own architecture diagram against the code and finding a real
+gap — every prior model discarded FinBERT's semantic embedding and used only its
+3-class sentiment probabilities. Reimplements
+[STONK](https://arxiv.org/abs/2508.13327) (numeric market features as the attention
+query, text embeddings as key/value) plus an MSGCA-style gate. **Honest result: the
+apparent improvement doesn't survive an ablation.** CL's balanced accuracy jumped
+from 0.492 to 0.626 with the richer embedding — but zeroing out the entire news
+input collapsed *every* market to exactly ~0.500, proving the gain was the model
+exploiting the (already-known, diluted) news-feature leak more effectively, not a
+real architecture benefit. Re-checked Model 4's original result the same way — it
+held up fine (0.474→0.492 with news removed, no collapse), so this is specific to
+Model 7's richer representation, not a retroactive problem for everything else. See
+PHASE_TRACKER.md for the full ablation writeup. Everything else (the P&L-based
+ablation, regime/failure analysis, dashboard, report) is queued.
 
 Real, verified data sources now wired in: Yahoo Finance (prices + real current
 per-ticker news), FRED (macro, no API key needed via the public CSV endpoint), EIA
