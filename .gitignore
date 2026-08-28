@@ -13,3 +13,6 @@ external/
 # experimental result of the forward paper-trading study (scripts/paper_trade_agent.py),
 # and committing it as it accumulates is what makes the record tamper-evident: each
 # day's decision is timestamped in git history before the outcome is known.
+
+# Runtime logs from the daily launchd runner (not source)
+ops/logs/

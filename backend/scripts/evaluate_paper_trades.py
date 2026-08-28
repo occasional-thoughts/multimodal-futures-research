@@ -107,6 +107,35 @@ def realized_forward_returns(ticker: str, dates: list[str], horizon_days: int) -
     return out
 
 
+def report_coverage(df: pd.DataFrame) -> None:
+    """Report which weekdays have no logged decision.
+
+    Added after a real silent failure: the app-scheduled job fired on 2026-08-28
+    (its lastRunAt confirmed it) but logged nothing, because an unattended session
+    stalls on tool-permission prompts. Nothing surfaced an error -- the log simply
+    stopped growing. For a forward study whose entire validity rests on an unbroken
+    day-by-day record, a silent gap is the most dangerous failure mode there is, so
+    coverage is now reported every time results are, not left to be noticed by luck.
+
+    Gaps are reported, never filled. Backfilling a decision after the outcome is
+    knowable would invalidate the study outright.
+    """
+    if df.empty or "trade_date" not in df.columns:
+        return
+    dates = pd.to_datetime(df["trade_date"]).dt.normalize()
+    first, last = dates.min(), max(dates.max(), pd.Timestamp.today().normalize())
+    weekdays = pd.bdate_range(first, last)          # business days only
+    logged = set(dates.unique())
+    missing = [d for d in weekdays if d not in logged]
+    covered = len(weekdays) - len(missing)
+    print(f"\nCoverage: {covered}/{len(weekdays)} weekdays logged since {first.date()}")
+    if missing:
+        shown = ", ".join(str(d.date()) for d in missing[:10])
+        more = f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""
+        print(f"  ! MISSING {len(missing)} weekday(s): {shown}{more}")
+        print("  These stay missing by design -- backfilling after outcomes are knowable would invalidate the study.")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--log-path", default=str(LOG_PATH))
@@ -119,6 +148,7 @@ def main():
 
     ok = df[df["status"] == "ok"].copy()
     print(f"Log: {len(df)} rows total, {len(ok)} successful agent runs, {len(df) - len(ok)} errors")
+    report_coverage(df)
 
     # Rows from the abandoned off-the-shelf TradingAgents engine are excluded rather
     # than deleted: that engine's technical analyst failed and its decisions cited

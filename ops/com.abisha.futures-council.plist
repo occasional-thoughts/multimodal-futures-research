@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.abisha.futures-council</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/abish/Downloads/stock-xai-project/ops/run_daily_paper_trade.sh</string>
+    </array>
+
+    <!-- 17:05 local, Mon-Fri. launchd (unlike cron) runs a missed job once the
+         machine wakes, which matters on a laptop that may be asleep at 17:05. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/abish/Downloads/stock-xai-project/ops/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/abish/Downloads/stock-xai-project/ops/logs/launchd.err.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

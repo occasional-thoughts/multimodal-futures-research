@@ -431,6 +431,12 @@ Now passes all five regression cases, including both real failures observed in p
 
 The conclusion is the useful part: **doubling model size changed nothing, while changing the architecture changed everything.** The same 8B model that emitted a pandas tutorial under the raw-CSV design produces correctly-grounded decisions under the pre-computed brief. That is direct evidence the original failure was architectural, not a capacity limit — and it means the fix generalizes to whatever model is available rather than depending on access to a large one. Staying on 8B: faster and more reliable for an unattended daily job, at no measured quality cost.
 
+**Silent scheduler failure, found on 2026-08-28 and fixed.** The app-based scheduled task fired on time (its `lastRunAt` confirmed it) but logged **nothing** -- an unattended session stalls on tool-permission prompts, and no error surfaced anywhere. The log simply stopped growing. For a forward study whose entire validity rests on an unbroken daily record, that is the most dangerous failure mode available: weeks of gaps could accumulate unnoticed and only be discovered at evaluation time, when they can no longer be honestly repaired.
+
+Fixed with two independent measures, not one:
+1. **A standalone `launchd` job** (`ops/run_daily_paper_trade.sh` + `ops/com.abisha.futures-council.plist`) that runs independently of any app or interactive session, needs no permission prompts, survives reboots, and -- unlike cron -- still fires a missed job once a sleeping laptop wakes. It skips weekends and refuses to double-log a day that already has a decision.
+2. **Coverage-gap reporting in the evaluator**, which now prints `Coverage: N/M weekdays logged` and names every missing date on each run. Gaps are *reported, never filled*: backfilling a decision once its outcome is knowable would invalidate the study outright, so a missing day stays missing.
+
 **Status: running.** A scheduled weekday task appends decisions and commits them to git *before the outcome is known*, which makes the record tamper-evident. Meaningful N is roughly four weeks out. This is the honest cost of the only methodologically clean path available on free data — and it is still a stronger evidentiary basis than most of the 77 audited studies above.
 
 ## Phase 27 — Look-ahead bias checklist
