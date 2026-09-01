@@ -16,7 +16,7 @@
 
 set -uo pipefail
 
-PROJECT="/Users/abish/Downloads/stock-xai-project"
+PROJECT="/Users/abish/projects/stock-xai-project"
 OLLAMA="/opt/homebrew/opt/ollama/bin/ollama"
 LOGDIR="$PROJECT/ops/logs"
 mkdir -p "$LOGDIR"
@@ -25,6 +25,19 @@ LOG="$LOGDIR/run_$STAMP.log"
 
 exec >>"$LOG" 2>&1
 echo "===== run started $(date '+%Y-%m-%d %H:%M:%S %Z') ====="
+
+# Single-instance lock. Without it, two runs can overlap (e.g. a manual run plus
+# a launchd trigger) -- and the "already logged today" check below does NOT catch
+# that, because neither has written its row yet. Observed live on 2026-09-01: two
+# concurrent harnesses, which would have written duplicate rows for the same day
+# and silently inflated the sample. flock is not on macOS by default, so this uses
+# an atomic mkdir, which succeeds for exactly one caller.
+LOCK="/tmp/futures-council.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  echo "another run holds the lock ($LOCK) -- exiting to avoid duplicate rows"
+  exit 0
+fi
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
 # Skip weekends: futures don't settle, so a Saturday row would be a duplicate
 # of Friday's close masquerading as a new observation.

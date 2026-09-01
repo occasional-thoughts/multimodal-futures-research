@@ -11,3 +11,4 @@ dice-ml
 fastapi
 uvicorn[standard]
 joblib
+yfinance

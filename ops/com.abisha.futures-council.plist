@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/abish/Downloads/stock-xai-project/ops/run_daily_paper_trade.sh</string>
+        <string>/Users/abish/projects/stock-xai-project/ops/run_daily_paper_trade.sh</string>
     </array>
 
     <!-- 17:05 local, Mon-Fri. launchd (unlike cron) runs a missed job once the
@@ -22,9 +22,9 @@
     </array>
 
     <key>StandardOutPath</key>
-    <string>/Users/abish/Downloads/stock-xai-project/ops/logs/launchd.out.log</string>
+    <string>/Users/abish/projects/stock-xai-project/ops/logs/launchd.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/abish/Downloads/stock-xai-project/ops/logs/launchd.err.log</string>
+    <string>/Users/abish/projects/stock-xai-project/ops/logs/launchd.err.log</string>
 
     <key>RunAtLoad</key>
     <false/>

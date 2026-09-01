@@ -437,6 +437,14 @@ Fixed with two independent measures, not one:
 1. **A standalone `launchd` job** (`ops/run_daily_paper_trade.sh` + `ops/com.abisha.futures-council.plist`) that runs independently of any app or interactive session, needs no permission prompts, survives reboots, and -- unlike cron -- still fires a missed job once a sleeping laptop wakes. It skips weekends and refuses to double-log a day that already has a decision.
 2. **Coverage-gap reporting in the evaluator**, which now prints `Coverage: N/M weekdays logged` and names every missing date on each run. Gaps are *reported, never filled*: backfilling a decision once its outcome is knowable would invalidate the study outright, so a missing day stays missing.
 
+**Two scheduler failures in four days, both silent — and what caught them.** Recorded in full because the failure mode matters more than either bug:
+
+1. **App-based task (2026-08-28)** — fired on schedule (its `lastRunAt` proved it) but logged nothing: an unattended session stalls on tool-permission prompts. No error surfaced anywhere.
+2. **launchd job (2026-08-31)** — failed with exit **126, `Operation not permitted`**. Root cause found empirically, not guessed: macOS **TCC blocks launchd agents from reading `~/Downloads` entirely**. A test agent placed in `~/Library` could execute fine but was `BLOCKED` reading `~/Downloads`. The script was correct; its *location* was fatal. Fixed by relocating the whole project to `~/projects/stock-xai-project`. **Monday 2026-08-31 is a permanent gap** — it will not be backfilled, since a decision written after its outcome is knowable is worthless as forward evidence and would corrupt the study.
+3. **A concurrency race, caught live while fixing the above** — a manual run and a launchd trigger ran simultaneously. The "already logged today" guard does *not* catch this, because neither run has written its row yet. Two concurrent harnesses would have written duplicate rows and silently inflated the sample. Fixed with an atomic `mkdir` lock (`flock` is unavailable on macOS by default). Verified no duplicates were actually written.
+
+**The honest lesson: both scheduler failures reported success while doing nothing.** The coverage-gap reporting added after the first failure is the only reason the second was visible within a day rather than at evaluation time, weeks later, when the missing days could no longer be honestly recovered. For a forward study, silent non-execution is a more dangerous failure than a crash — a crash is loud.
+
 **Status: running.** A scheduled weekday task appends decisions and commits them to git *before the outcome is known*, which makes the record tamper-evident. Meaningful N is roughly four weeks out. This is the honest cost of the only methodologically clean path available on free data — and it is still a stronger evidentiary basis than most of the 77 audited studies above.
 
 ## Phase 27 — Look-ahead bias checklist
