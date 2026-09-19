@@ -16,3 +16,8 @@ external/
 
 # Runtime logs from the daily launchd runner (not source)
 ops/logs/
+
+# Intraday bar archive (Parquet, grows daily). Tracked separately from the
+# decision log: it is recoverable-in-principle market data, not the study's
+# tamper-evident record. Remove this line if you want the history in git.
+data/intraday/

@@ -12,3 +12,4 @@ fastapi
 uvicorn[standard]
 joblib
 yfinance
+pyarrow

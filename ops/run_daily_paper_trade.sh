@@ -39,6 +39,8 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
+(cd "$PROJECT/backend" && "$PROJECT/.venv/bin/python" -m app.intraday.archiver) || echo "archiver failed (non-fatal)"
+
 # Skip weekends: futures don't settle, so a Saturday row would be a duplicate
 # of Friday's close masquerading as a new observation.
 DOW="$(date +%u)"   # 1=Mon .. 7=Sun
@@ -70,6 +72,7 @@ if ! curl -sf http://localhost:11434/api/version >/dev/null; then
 fi
 
 cd "$PROJECT/backend" || exit 1
+
 "$PROJECT/.venv/bin/python" scripts/paper_trade_agent.py --quiet
 STATUS=$?
 echo "harness exit status: $STATUS"
