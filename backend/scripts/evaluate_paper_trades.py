@@ -164,6 +164,15 @@ def main():
         print("  ~ all rows predate the council engine; nothing comparable to evaluate")
         ok = ok.iloc[0:0]
 
+    # Exclude non-trading days. A weekend row's price is just the prior Friday's
+    # close under a new date, so counting it would add a duplicate observation
+    # dressed up as a new one.
+    if "non_trading_day" in ok.columns:
+        wknd = (ok["non_trading_day"] == True).sum()  # noqa: E712 -- NaN must not match
+        if wknd:
+            print(f"  ~ {wknd} non-trading-day row(s) excluded (weekend; price is the prior close)")
+        ok = ok[ok["non_trading_day"] != True]  # noqa: E712
+
     if ok.empty:
         print("No successful council runs to evaluate yet.")
         return 1
@@ -213,6 +222,27 @@ def main():
             "Keep running paper_trade_agent.py daily; re-run this script as the log grows."
         )
         return 0
+
+    # LEAN is scored separately from ACTION, and is the metric that actually
+    # answers the research question. 16 days of the original design produced 26
+    # HOLDs and zero positions: a desk that never trades returns exactly 0.00%,
+    # so ACTION alone could never be compared to anything. LEAN forces a
+    # directional read every day whether or not capital is risked, which makes
+    # "is the council's directional judgement better than a coin flip?" an
+    # answerable question independent of its risk appetite.
+    has_lean = "lean" in ok.columns and ok["lean"].notna().any()
+    if has_lean:
+        print(f"\n{'Market':<8}{'Lean hit-rate':<16}{'N (resolved)':<14}{'vs coin flip'}")
+        for ticker, resolved in per_market.items():
+            r = resolved[resolved.get("lean").isin(["UP", "DOWN"])] if "lean" in resolved.columns else resolved.iloc[0:0]
+            if not len(r):
+                print(f"{ticker:<8}{'n/a':<16}{0:<14}(no LEAN logged yet)")
+                continue
+            correct = ((r["lean"] == "UP") == (r["fwd_return"] > 0)).mean()
+            edge = correct - 0.5
+            print(f"{ticker:<8}{correct:<16.3f}{len(r):<14}{edge:+.3f}")
+        print("  (LEAN hit-rate is directional accuracy: 0.500 = coin flip. Needs the same"
+              f"\n   {MIN_OBS_FOR_STATS}-observation floor before it means anything.)")
 
     print(f"\n{'Market':<8}{'Agent mean':<14}{'Buy&hold mean':<16}{'Agent hit-rate':<16}{'N'}")
     for ticker, resolved in per_market.items():

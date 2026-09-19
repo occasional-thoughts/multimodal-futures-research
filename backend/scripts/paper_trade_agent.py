@@ -146,12 +146,19 @@ def run_once(markets: list[str], trade_date: str, log_path: Path, model: str, ve
     for ticker in markets:
         if verbose:
             print(f"\n=== {ticker} ({trade_date}) ===")
+        # Weekend rows are not real observations: futures do not settle, so the
+        # "decision price" is just Friday's close appearing under a new date. Logged
+        # anyway (useful for testing the pipeline) but flagged so evaluation can
+        # exclude them -- silently counting them would inflate the sample with
+        # duplicates of an already-recorded day.
+        is_weekend = datetime.strptime(trade_date, "%Y-%m-%d").weekday() >= 5
         row = {
             "logged_at_utc": datetime.now(timezone.utc).isoformat(),
             "trade_date": trade_date,
             "ticker": ticker,
             "model": model,
             "engine": "council",
+            "non_trading_day": is_weekend,
         }
         try:
             brief = build_brief(ticker)
@@ -164,6 +171,7 @@ def run_once(markets: list[str], trade_date: str, log_path: Path, model: str, ve
             result = council.run(brief, verbose=verbose)
             row.update({
                 "action": result.action,
+                "lean": result.lean,
                 "confidence": result.confidence,
                 "decision_raw": result.reasoning,
                 "council": to_dict(result),

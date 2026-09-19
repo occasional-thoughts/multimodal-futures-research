@@ -87,6 +87,7 @@ class CouncilResult:
     action: str
     confidence: str
     reasoning: str
+    lean: str = ""
     analyst_reports: dict = field(default_factory=dict)
     bull_case: str = ""
     bear_case: str = ""
@@ -140,8 +141,16 @@ class TradingCouncil:
             print("  [risk manager] final verdict...")
         final = self._ask(
             "You are the risk manager and final decision maker for a futures trading desk. Weigh both cases and "
-            "decide. Prefer HOLD when the evidence conflicts -- capital preservation beats forcing a trade, and "
-            "most days genuinely have no edge. Respond in EXACTLY this format:\n"
+            "decide.\n\n"
+            "LEAN is REQUIRED and must be UP or DOWN. It is your best directional read of where price goes over "
+            "the next week, and you must give one even when the evidence is weak or conflicting -- 'unclear' is "
+            "not a permitted answer for LEAN. Express genuine uncertainty through CONFIDENCE, not by abstaining.\n\n"
+            "ACTION is the separate question of whether the edge is strong enough to actually risk capital. "
+            "HOLD is legitimate, but it must be EARNED by genuinely balanced evidence -- it is not the safe "
+            "default, and a desk that never takes a position has no strategy to evaluate. If the bull and bear "
+            "cases are not close to evenly matched, take the side that is stronger.\n\n"
+            "Respond in EXACTLY this format:\n"
+            "LEAN: <UP|DOWN>\n"
             "ACTION: <BUY|SELL|HOLD>\n"
             "CONFIDENCE: <LOW|MEDIUM|HIGH>\n"
             "KEY_LEVEL: <a price from the brief that would invalidate this view>\n"
@@ -151,9 +160,17 @@ class TradingCouncil:
 
         action = self._extract(final, "ACTION", r"\b(BUY|SELL|HOLD)\b", "HOLD")
         confidence = self._extract(final, "CONFIDENCE", r"\b(LOW|MEDIUM|HIGH)\b", "LOW")
+        # LEAN is scored separately from ACTION. 16 days of live running produced 26
+        # HOLDs and zero positions -- a strategy that never trades returns exactly
+        # 0.00% and cannot be compared against anything, so the study was recording
+        # nothing. Forcing a directional read guarantees an evaluable signal every
+        # day regardless of whether the desk chooses to risk capital, and lets the
+        # two questions be measured independently: is the directional read better
+        # than chance, and is the capital-allocation decision any good on top of it.
+        lean = self._extract(final, "LEAN", r"\b(UP|DOWN)\b", "")
 
         return CouncilResult(
-            ticker=ticker, price=price, action=action, confidence=confidence,
+            ticker=ticker, price=price, action=action, confidence=confidence, lean=lean,
             reasoning=final, analyst_reports=reports, bull_case=bull, bear_case=bear, raw_final=final,
         )
 
@@ -171,7 +188,7 @@ class TradingCouncil:
 
 def to_dict(r: CouncilResult) -> dict:
     return {
-        "ticker": r.ticker, "price": r.price, "action": r.action, "confidence": r.confidence,
+        "ticker": r.ticker, "price": r.price, "action": r.action, "confidence": r.confidence, "lean": r.lean,
         "reasoning": r.reasoning, "analyst_reports": r.analyst_reports,
         "bull_case": r.bull_case, "bear_case": r.bear_case,
     }

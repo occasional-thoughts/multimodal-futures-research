@@ -84,6 +84,27 @@ def fetch_headlines(ticker: str, limit: int = 12) -> list[dict]:
         return []
 
 
+def _retry(fn, attempts: int = 4, base_delay: float = 3.0):
+    """Retry a flaky network call with exponential backoff.
+
+    Added after 6 of 33 live runs (18%) died on Yahoo ConnectionError, losing
+    2026-09-02 and 2026-09-09 entirely -- both markets, both days, unrecoverable
+    because a forward study cannot backfill a decision once its outcome is known.
+    A transient DNS or rate-limit blip should cost a few seconds of retry, not a
+    permanent hole in the record.
+    """
+    import time
+    last = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            if i < attempts - 1:
+                time.sleep(base_delay * (2 ** i))
+    raise last
+
+
 def build_brief(ticker: str, period: str = "3y") -> dict:
     # 3y, not 1y: the Baz et al. trend scores normalize by a trailing 252-day std,
     # so a 1-year fetch leaves them NaN on the most recent row (caught by running
@@ -95,7 +116,7 @@ def build_brief(ticker: str, period: str = "3y") -> dict:
     price-anchor guard) instead of taking the model's word for them.
     """
     name = MARKET_NAMES.get(ticker, ticker)
-    price_df = fetch_price_history(ticker, period=period)
+    price_df = _retry(lambda: fetch_price_history(ticker, period=period))
     tech = compute_indicators(price_df)
     latest_date = price_df.index[-1]
     close = float(price_df["close"].iloc[-1])

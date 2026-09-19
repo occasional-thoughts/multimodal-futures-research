@@ -445,6 +445,20 @@ Fixed with two independent measures, not one:
 
 **The honest lesson: both scheduler failures reported success while doing nothing.** The coverage-gap reporting added after the first failure is the only reason the second was visible within a day rather than at evaluation time, weeks later, when the missing days could no longer be honestly recovered. For a forward study, silent non-execution is a more dangerous failure than a crash — a crash is loud.
 
+**Degenerate all-HOLD output, found 2026-09-19 after 16 trading days of live running.** The study ran faithfully and recorded nothing usable: **26 decisions, 26 HOLDs, zero positions.** A desk that never takes a position returns exactly 0.00%, so there was nothing to compare against buy-and-hold — the experiment was unanswerable by construction, not merely underpowered. 23 of the 26 were MEDIUM confidence, so this was not honest hedging under uncertainty; it was systematic refusal to commit.
+
+**Cause, and it was mine.** The risk-manager prompt said *"Prefer HOLD when the evidence conflicts -- capital preservation beats forcing a trade, and most days genuinely have no edge."* Written to guard against an agent inventing conviction, it overcorrected into one that could never act. **This is the same failure class as the class-imbalance collapse in Models 4-5** — a model emitting a constant regardless of input — arriving through a prompt rather than a loss function. Worth recording precisely because the earlier fix (balanced accuracy, class weighting) addressed the loss-function route and gave no protection at all against the prompt route.
+
+**Redesign: LEAN is scored separately from ACTION.**
+- `LEAN: <UP|DOWN>` is **required every day**, with "unclear" explicitly disallowed; uncertainty is expressed through CONFIDENCE, not abstention.
+- `ACTION: <BUY|SELL|HOLD>` remains the capital-allocation decision, with HOLD now something that must be *earned* by genuinely balanced evidence rather than being the safe default.
+
+This decouples two questions that were previously entangled: *is the council's directional read better than a coin flip?* and *is its risk-taking any good on top of that?* The first is now answerable daily regardless of risk appetite. Verified live on first run: GC=F returned `LEAN DOWN / ACTION SELL / MEDIUM`, citing speculators at the 96th percentile, USD 118.21, real yields 2.61%, MACD -2.094, KEY_LEVEL 4,304.43 (the real 20-day low). CL=F returned `LEAN DOWN / ACTION HOLD` — a recorded directional view on a day the desk declines to trade, which is exactly the behaviour the old design made impossible.
+
+**Three further fixes in the same pass:** retry-with-backoff for Yahoo `ConnectionError` (6 of 33 runs, 18%, which permanently cost 2026-09-02 and 2026-09-09); weekend rows now flagged `non_trading_day` at source and excluded by the evaluator (a Saturday "decision price" is just Friday's close under a new date, so counting it duplicates an observation); and Ollama installed as a brew-managed service after being found dead, so the model server survives reboots.
+
+**The 16 all-HOLD days are retained in the log, not deleted** — they are the documented baseline of what the original prompt produced.
+
 **Status: running.** A scheduled weekday task appends decisions and commits them to git *before the outcome is known*, which makes the record tamper-evident. Meaningful N is roughly four weeks out. This is the honest cost of the only methodologically clean path available on free data — and it is still a stronger evidentiary basis than most of the 77 audited studies above.
 
 ## Phase 27 — Look-ahead bias checklist
