@@ -459,6 +459,20 @@ This decouples two questions that were previously entangled: *is the council's d
 
 **The 16 all-HOLD days are retained in the log, not deleted** — they are the documented baseline of what the original prompt produced.
 
+**Third infrastructure failure: 48% silent data loss (2026-09-21 to 10-08), and two fixes that missed before the real cause was found.**
+
+13 of 27 runs failed while the study looked healthy. The reason it stayed invisible is the important part: failures were written to the log **as rows** rather than crashing, so the file kept growing, the scheduler kept reporting success, and nothing alerted. Only auditing the `status` field exposed it.
+
+Every failure was `NameResolutionError` on `query2.finance.yahoo.com`. Two attempts missed:
+1. In-process retry in `brief.py` (~21s total) — aimed at *flakiness* when the resolver was simply dead on wake, so it just exhausted itself.
+2. A shell readiness probe using `ping`/`nslookup` — those query the system resolver directly, while Python's `requests` goes through `getaddrinfo`. The probe could therefore report "ready" while the path doing the actual work was still broken.
+
+The diagnosis came from testing both paths **at the same moment**: `fetch_price_history` succeeded 3/3 from an interactive shell while launchd-context runs were failing. Same machine, same second, opposite results — which ruled out "the network is down" and isolated it to the environment. The probe now runs through the project's own interpreter via `socket.getaddrinfo`, measuring readiness on the exact path the work uses.
+
+**A second, independent cause surfaced once DNS was fixed:** CL=F succeeded and GC=F died on `OpenAITimeoutError`. Loading the 8B model from cold takes over two minutes (measured directly), so whichever market ran first paid a cost the second did not. Fixed by warming and pinning the model (`keep_alive` 2h) before the run, plus a 3-attempt retry around each LLM call so one timeout no longer discards a whole market's day.
+
+**The through-line with the Model 6 data leak is worth stating explicitly:** that bug was a number too good to be true (Sharpe 11.6); this one was logs too quiet to be true (48% loss, zero alarms). Neither failure announced itself, and both were found only by deliberately checking something that looked fine. The project's standing lesson — distrust the comfortable signal — applies to green dashboards exactly as much as to good backtest numbers.
+
 **Status: running.** A scheduled weekday task appends decisions and commits them to git *before the outcome is known*, which makes the record tamper-evident. Meaningful N is roughly four weeks out. This is the honest cost of the only methodologically clean path available on free data — and it is still a stronger evidentiary basis than most of the 77 audited studies above.
 
 ## Phase 27 — Look-ahead bias checklist

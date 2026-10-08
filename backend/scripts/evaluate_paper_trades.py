@@ -213,6 +213,18 @@ def main():
         per_market[ticker] = resolved
 
     total_resolved = min((len(v) for v in per_market.values()), default=0)
+
+    # Show how much usable LEAN data exists even while statistics stay gated.
+    # Knowing the distance to the floor is not the same as being shown a number
+    # that cannot yet support a conclusion, and hiding the count just makes the
+    # wait opaque.
+    if "lean" in ok.columns:
+        for ticker, resolved in per_market.items():
+            if "lean" in resolved.columns:
+                n = int(resolved["lean"].isin(["UP", "DOWN"]).sum())
+                print(f"  {ticker}: {n} resolved observation(s) carry a directional LEAN "
+                      f"({max(0, MIN_OBS_FOR_STATS - n)} more to the reporting floor)")
+
     if total_resolved < MIN_OBS_FOR_STATS:
         print(
             f"\nNot reporting performance statistics yet: the thinnest market has {total_resolved} "
