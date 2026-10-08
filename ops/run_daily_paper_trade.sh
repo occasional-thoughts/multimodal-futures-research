@@ -39,6 +39,35 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
+# Wait for the network, probing with the SAME mechanism the real work uses.
+#
+# A previous version probed with ping/nslookup and still saw a 48% failure rate
+# (13 of 27 runs, all NameResolutionError). Those tools query the system resolver
+# directly, while Python's requests goes through getaddrinfo -- so the check
+# could report "ready" while the path that actually does the fetching was still
+# dead. Verified the asymmetry directly: fetch_price_history succeeded 3/3 from
+# an interactive shell at the moment a launchd-context run was failing.
+#
+# Probing through the project's own interpreter removes the gap: if this
+# succeeds, the thing that matters can resolve.
+for i in $(seq 1 30); do
+  if "$PROJECT/.venv/bin/python" -c "import socket;socket.getaddrinfo('query2.finance.yahoo.com',443)" 2>/dev/null; then
+    [ "$i" -gt 1 ] && echo "network ready after $(( (i-1)*10 ))s"
+    break
+  fi
+  [ "$i" -eq 30 ] && echo "WARNING: resolver still dead after 300s -- continuing, run may fail"
+  sleep 10
+done
+
+# Pre-load the model and pin it in memory for the run. Loading an 8B model from
+# cold takes over two minutes, which is what killed GC=F on 2026-10-08 with an
+# OpenAITimeoutError while CL=F (running second, against an already-warm model)
+# succeeded. Warming first makes the two markets symmetric instead of making the
+# first one pay a cost the second does not.
+curl -s --max-time 600 http://localhost:11434/api/generate \
+  -d '{"model":"qwen3:8b","prompt":"ready","stream":false,"keep_alive":"2h"}' >/dev/null \
+  && echo "model warm (pinned 2h)" || echo "model warm-up failed (non-fatal)"
+
 (cd "$PROJECT/backend" && "$PROJECT/.venv/bin/python" -m app.intraday.archiver) || echo "archiver failed (non-fatal)"
 
 # Skip weekends: futures don't settle, so a Saturday row would be a duplicate

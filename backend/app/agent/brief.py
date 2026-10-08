@@ -84,14 +84,20 @@ def fetch_headlines(ticker: str, limit: int = 12) -> list[dict]:
         return []
 
 
-def _retry(fn, attempts: int = 4, base_delay: float = 3.0):
+def _retry(fn, attempts: int = 6, base_delay: float = 5.0):
     """Retry a flaky network call with exponential backoff.
 
     Added after 6 of 33 live runs (18%) died on Yahoo ConnectionError, losing
     2026-09-02 and 2026-09-09 entirely -- both markets, both days, unrecoverable
     because a forward study cannot backfill a decision once its outcome is known.
-    A transient DNS or rate-limit blip should cost a few seconds of retry, not a
-    permanent hole in the record.
+
+    Widened to 6 attempts / 5s base (~155s total) after the first version proved
+    far too impatient: the failure rate actually ROSE to 48% (13 of 27 runs,
+    2026-09-21..10-08), every one a NameResolutionError. The retry was not wrong,
+    it was aimed at the wrong thing -- the network was genuinely absent on wake,
+    not flaky, so four quick attempts just exhausted themselves against a dead
+    resolver. The real fix is the network-readiness wait in
+    ops/run_daily_paper_trade.sh; this widening is the backstop.
     """
     import time
     last = None

@@ -103,7 +103,29 @@ class TradingCouncil:
         )
         self.model = model
 
-    def _ask(self, system: str, user: str) -> str:
+    def _ask(self, system: str, user: str, attempts: int = 3) -> str:
+        """Retry transient LLM failures.
+
+        The council makes 7 sequential calls; a timeout on any one of them used to
+        discard the entire market's record for that day. Observed 2026-10-08:
+        CL=F completed fine while GC=F died on OpenAITimeoutError, losing a day of
+        gold data to what was almost certainly a cold model load. A forward study
+        cannot backfill, so a retry costing a minute is strictly better than a
+        permanent hole.
+        """
+        import time
+
+        last = None
+        for i in range(attempts):
+            try:
+                return self._invoke(system, user)
+            except Exception as e:
+                last = e
+                if i < attempts - 1:
+                    time.sleep(10 * (i + 1))
+        raise last
+
+    def _invoke(self, system: str, user: str) -> str:
         resp = self.llm.invoke([SystemMessage(content=system + "\n\n" + _GROUNDING), HumanMessage(content=user)])
         text = resp.content if isinstance(resp.content, str) else str(resp.content)
         # Qwen-family models emit chain-of-thought in <think> blocks; strip so the
